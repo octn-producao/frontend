@@ -304,9 +304,6 @@ if (simulator) {
   updateSimulation();
 }
 
-const initialView = window.location.hash.slice(1);
-activateView(validViews.has(initialView) ? initialView : "home", false);
-
 if ("IntersectionObserver" in window) {
   const observer = new IntersectionObserver(
     (entries) => {
@@ -368,6 +365,9 @@ const observationItems = ["Apresentação da refeição", "Temperatura adequada"
 function isAuthenticated() {
   return authState.authenticated;
 }
+
+const initialView = window.location.hash.slice(1);
+activateView(validViews.has(initialView) ? initialView : "home", false);
 
 function updateAuthUI() {
   const authenticated = isAuthenticated();
