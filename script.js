@@ -677,6 +677,7 @@ async function prepareAnnexForSync(annex) {
   const response = await fetch(imageUrl.href, { cache: "no-store", credentials: "same-origin" });
   if (!response.ok) throw new Error(`Não foi possível carregar o anexo ${prepared.fileName || "sem nome"}.`);
 
+  prepared.sourceUrl = imageUrl.href;
   const blob = await response.blob();
   if (!blob.type.startsWith("image/")) throw new Error("O anexo não é uma imagem válida.");
   prepared.dataUrl = await blobToDataUrl(blob);
