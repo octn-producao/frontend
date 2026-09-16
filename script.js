@@ -333,6 +333,9 @@ const API_BASE_URL = (
   (["localhost", "127.0.0.1"].includes(window.location.hostname) ? "http://localhost:3000" : "")
 ).replace(/\/$/, "");
 const authState = { authenticated: false, username: "", email: "", csrfToken: "" };
+const REPORT_OWNER_USERNAME = "grazielle.carvalho";
+const IMPORTED_REPORT_ID = "ilpi-gerovinda-2026-09-10";
+let reportSyncPromise = null;
 const ilpiForm = document.getElementById("ilpi-form");
 const formsDashboard = document.getElementById("forms-dashboard");
 const ilpiWorkspace = document.getElementById("ilpi-workspace");
@@ -449,6 +452,7 @@ async function restoreAuthSession() {
   if (isAuthenticated() && window.location.hash === "#formularios") {
     activateView("formularios", false);
   }
+  if (isAuthenticated()) void syncOwnedReport();
 }
 
 async function logout() {
@@ -518,6 +522,7 @@ document.getElementById("login-form")?.addEventListener("submit", async (event) 
     closeHeaderPopover("account-button", "account-popover");
     history.pushState(null, "", "#formularios");
     activateView("formularios");
+    void syncOwnedReport();
   } catch (error) {
     clearAuthSession();
     updateAuthUI();
@@ -642,6 +647,111 @@ function persistReports(reports) {
     alert("Não foi possível salvar: o armazenamento local está cheio. Remova ou reduza imagens dos anexos e tente novamente.");
     throw error;
   }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function prepareAnnexForSync(annex) {
+  const prepared = { ...annex };
+  const source = String(prepared.dataUrl || "");
+  if (!source || source.startsWith("data:image/") || source.startsWith("https://i.ibb.co/")) {
+    return prepared;
+  }
+
+  const imageUrl = new URL(source, document.baseURI);
+  if (imageUrl.origin !== window.location.origin) {
+    throw new Error("Origem de anexo não autorizada.");
+  }
+
+  const response = await fetch(imageUrl.href, { cache: "no-store", credentials: "same-origin" });
+  if (!response.ok) throw new Error(`Não foi possível carregar o anexo ${prepared.fileName || "sem nome"}.`);
+
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/")) throw new Error("O anexo não é uma imagem válida.");
+  prepared.dataUrl = await blobToDataUrl(blob);
+  return prepared;
+}
+
+async function prepareReportForSync(report) {
+  const prepared = JSON.parse(JSON.stringify(report));
+  prepared.data.annexes = await Promise.all(
+    (prepared.data.annexes || []).map((annex) => prepareAnnexForSync(annex))
+  );
+  return prepared;
+}
+
+function applySyncedAttachments(reportId, result) {
+  const reports = getReports();
+  const report = reports.find((item) => item.id === reportId);
+  if (!report) return;
+
+  for (const attachment of result.attachments || []) {
+    const annex = report.data.annexes?.[attachment.index];
+    if (!annex) continue;
+    annex.dataUrl = attachment.url;
+    annex.imageUrl = attachment.url;
+    annex.imageStorage = "imgbb";
+  }
+
+  report.cloud = {
+    owner: REPORT_OWNER_USERNAME,
+    firestorePath: result.firestorePath,
+    syncedAt: result.syncedAt,
+  };
+  persistReports(reports);
+
+  if (currentReportId === reportId) {
+    document.querySelectorAll("#annex-rows .annex-editor-item").forEach((item, index) => {
+      const attachment = (result.attachments || []).find((entry) => entry.index === index);
+      if (!attachment) return;
+      item.dataset.fileData = attachment.url;
+      const preview = item.querySelector(".annex-preview");
+      preview.hidden = false;
+      preview.querySelector("img").src = attachment.url;
+    });
+  }
+}
+
+async function syncOwnedReport(reportRecord = null) {
+  if (authState.username !== REPORT_OWNER_USERNAME || !authState.csrfToken) return null;
+  if (reportSyncPromise) return reportSyncPromise;
+
+  const localReport = reportRecord?.id === IMPORTED_REPORT_ID
+    ? reportRecord
+    : getReports().find((report) => report.id === IMPORTED_REPORT_ID);
+  if (!localReport) return null;
+
+  reportSyncPromise = (async () => {
+    if (currentReportId === localReport.id) updateSaveIndicator("Sincronizando com o Firebase...");
+
+    try {
+      applyAuthSession(await authRequest("/api/auth/session"));
+      const preparedReport = await prepareReportForSync(localReport);
+      const result = await authRequest("/api/reports/sync", {
+        method: "POST",
+        headers: { "X-OCTN-CSRF": authState.csrfToken },
+        body: JSON.stringify({ report: preparedReport }),
+      });
+      applySyncedAttachments(localReport.id, result);
+      if (currentReportId === localReport.id) updateSaveIndicator("Salvo no Firebase");
+      return result;
+    } catch (error) {
+      console.error("Não foi possível sincronizar o relatório.", error);
+      if (currentReportId === localReport.id) updateSaveIndicator("Salvo localmente · sincronização pendente");
+      return null;
+    } finally {
+      reportSyncPromise = null;
+    }
+  })();
+
+  return reportSyncPromise;
 }
 
 function createImportedReport() {
@@ -946,8 +1056,15 @@ function saveCurrentReport() {
       if (reports[index].data[key] !== undefined) data[key] = reports[index].data[key];
     });
   }
-  const record = { id: currentReportId, createdAt: index >= 0 ? reports[index].createdAt : now, updatedAt: now, data };
+  const record = {
+    id: currentReportId,
+    createdAt: index >= 0 ? reports[index].createdAt : now,
+    updatedAt: now,
+    data,
+    ...(index >= 0 && reports[index].cloud ? { cloud: reports[index].cloud } : {}),
+  };
   if (index >= 0) reports[index] = record; else reports.unshift(record);
+  void syncOwnedReport(record);
   persistReports(reports);
   formIsDirty = false;
   updateSaveIndicator("Salvo neste navegador");
