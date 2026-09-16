@@ -327,7 +327,12 @@ if ("IntersectionObserver" in window) {
 
 // Área profissional e banco local de diagnósticos ILPI.
 const ILPI_STORAGE_KEY = "octn.ilpi.reports.v1";
-const AUTH_SESSION_KEY = "octn.admin.session";
+const configuredApiUrl = document.querySelector('meta[name="octn-api-url"]')?.content?.trim();
+const API_BASE_URL = (
+  configuredApiUrl ||
+  (["localhost", "127.0.0.1"].includes(window.location.hostname) ? "http://localhost:3000" : "")
+).replace(/\/$/, "");
+const authState = { authenticated: false, username: "", email: "", csrfToken: "" };
 const ilpiForm = document.getElementById("ilpi-form");
 const formsDashboard = document.getElementById("forms-dashboard");
 const ilpiWorkspace = document.getElementById("ilpi-workspace");
@@ -356,7 +361,7 @@ const kitchenItems = [
 const observationItems = ["Apresentação da refeição", "Temperatura adequada", "Consistência adequada", "Porcionamento", "Aceitação pelos residentes", "Auxílio durante a alimentação", "Posicionamento dos idosos", "Ambiente durante a refeição"];
 
 function isAuthenticated() {
-  return sessionStorage.getItem("octn.admin.session") === "authenticated";
+  return authState.authenticated;
 }
 
 function updateAuthUI() {
@@ -368,6 +373,8 @@ function updateAuthUI() {
   document.getElementById("account-button").setAttribute("aria-label", authenticated ? "Conta profissional conectada" : "Entrar na área profissional");
   document.getElementById("account-popover-title").textContent = authenticated ? "Conta profissional" : "Entrar na OCTN";
   if (!authenticated) closeHeaderPopover("internal-menu-button", "internal-menu");
+  const loggedUser = document.getElementById("logged-user");
+  if (loggedUser) loggedUser.textContent = authenticated ? authState.email : "Menu interno liberado.";
 }
 
 function closeHeaderPopover(buttonId, popoverId) {
@@ -389,13 +396,79 @@ function toggleHeaderPopover(buttonId, popoverId, otherButtonId, otherPopoverId)
   }
 }
 
-function logout() {
-  sessionStorage.removeItem(AUTH_SESSION_KEY);
+async function authRequest(path, options = {}) {
+  if (!API_BASE_URL) {
+    const error = new Error("Serviço de autenticação não configurado.");
+    error.status = 503;
+    throw error;
+  }
+
+  const headers = { Accept: "application/json", ...(options.headers || {}) };
+  if (options.body) headers["Content-Type"] = "application/json";
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: options.method || "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers,
+    body: options.body,
+  });
+
+  const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || "Não foi possível concluir a autenticação.");
+    error.status = response.status;
+    throw error;
+  }
+
+  return payload;
+}
+
+function applyAuthSession(payload) {
+  authState.authenticated = payload.authenticated === true;
+  authState.username = payload.user?.username || "";
+  authState.email = payload.user?.email || "";
+  authState.csrfToken = payload.csrfToken || "";
+}
+
+function clearAuthSession() {
+  authState.authenticated = false;
+  authState.username = "";
+  authState.email = "";
+  authState.csrfToken = "";
+}
+
+async function restoreAuthSession() {
+  try {
+    applyAuthSession(await authRequest("/api/auth/session"));
+  } catch {
+    clearAuthSession();
+  }
+
   updateAuthUI();
-  history.pushState(null, "", "#home");
-  activateView("home");
-  closeHeaderPopover("internal-menu-button", "internal-menu");
-  document.getElementById("account-button")?.focus();
+  if (isAuthenticated() && window.location.hash === "#formularios") {
+    activateView("formularios", false);
+  }
+}
+
+async function logout() {
+  try {
+    if (isAuthenticated()) {
+      await authRequest("/api/auth/logout", {
+        method: "POST",
+        headers: { "X-OCTN-CSRF": authState.csrfToken },
+      });
+    }
+  } catch (error) {
+    console.warn("Não foi possível encerrar a sessão no servidor.", error);
+  } finally {
+    clearAuthSession();
+    updateAuthUI();
+    history.pushState(null, "", "#home");
+    activateView("home");
+    closeHeaderPopover("internal-menu-button", "internal-menu");
+    document.getElementById("account-button")?.focus();
+  }
 }
 
 document.getElementById("account-button")?.addEventListener("click", () => {
@@ -421,25 +494,48 @@ document.querySelectorAll("#internal-menu [data-view-link]").forEach((button) =>
   button.addEventListener("click", () => closeHeaderPopover("internal-menu-button", "internal-menu"));
 });
 
-document.getElementById("login-form")?.addEventListener("submit", (event) => {
+document.getElementById("login-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const values = new FormData(event.currentTarget);
+  const form = event.currentTarget;
+  const values = new FormData(form);
   const message = document.getElementById("login-message");
-  if (values.get("username") === "admin" && values.get("password") === "1234") {
-    sessionStorage.setItem(AUTH_SESSION_KEY, "authenticated");
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  message.textContent = "Autenticando...";
+
+  try {
+    const session = await authRequest("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        username: String(values.get("username") || ""),
+        password: String(values.get("password") || ""),
+      }),
+    });
+    applyAuthSession(session);
     message.textContent = "";
-    event.currentTarget.reset();
+    form.reset();
     updateAuthUI();
     closeHeaderPopover("account-button", "account-popover");
     history.pushState(null, "", "#formularios");
     activateView("formularios");
-  } else {
-    message.textContent = "Login ou senha inválidos.";
+  } catch (error) {
+    clearAuthSession();
+    updateAuthUI();
+    message.textContent = error.status === 429
+      ? "Muitas tentativas. Aguarde alguns minutos."
+      : error.status >= 500
+        ? "Serviço de autenticação indisponível. Tente novamente."
+        : "Login ou senha inválidos.";
+    form.elements.password.value = "";
+    form.elements.password.focus();
+  } finally {
+    submitButton.disabled = false;
   }
 });
-document.getElementById("logout-button")?.addEventListener("click", logout);
-document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", logout));
+document.getElementById("logout-button")?.addEventListener("click", () => void logout());
+document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => void logout()));
 updateAuthUI();
+void restoreAuthSession();
 
 function textInput(name, value = "", type = "text") {
   return `<input type="${type}" data-field="${name}" value="${escapeAttribute(value)}" />`;
