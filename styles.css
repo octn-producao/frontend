@@ -2212,8 +2212,15 @@ footer {
 .saved-report strong { color: #202020; }
 .saved-report span, .saved-report small { color: #777f84; font-size: .75rem; }
 .saved-report .status-pill { display: inline-block; width: fit-content; padding: 5px 8px; border-radius: 20px; background: #eef5ee; color: #347d3d; font-weight: 700; }
+.saved-report .cloud-sync-status { margin-top: 7px; font-weight: 700; }
+.saved-report .cloud-sync-status.success { color: #347d3d; }
+.saved-report .cloud-sync-status.syncing { color: #2d638e; }
+.saved-report .cloud-sync-status.pending { color: #8a641a; }
+.saved-report .cloud-sync-status.error { max-width: 260px; color: #a33b35; }
 .report-actions { display: flex; gap: 8px; }
 .report-actions button { min-height: 38px; padding: 0 13px; border: 1px solid #dce2e5; border-radius: 3px; background: #fff; color: #34383a; cursor: pointer; font-weight: 700; }
+.report-actions button[data-sync-report] { border-color: #2d638e; color: #245578; }
+.report-actions button:disabled { cursor: wait; opacity: .65; }
 .report-actions .delete-report { color: #a33b35; }
 .empty-reports { padding: 40px; border: 1px dashed #cdd6da; color: #6b7378; text-align: center; }
 .form-workspace { padding: 28px 0 110px; }

@@ -336,6 +336,8 @@ const authState = { authenticated: false, username: "", email: "", csrfToken: ""
 const REPORT_OWNER_USERNAME = "grazielle.carvalho";
 const IMPORTED_REPORT_ID = "ilpi-gerovinda-2026-09-10";
 let reportSyncPromise = null;
+let reportSyncStatus = { state: "idle", message: "" };
+let localAutosaveTimer = null;
 const ilpiForm = document.getElementById("ilpi-form");
 const formsDashboard = document.getElementById("forms-dashboard");
 const ilpiWorkspace = document.getElementById("ilpi-workspace");
@@ -452,6 +454,7 @@ async function restoreAuthSession() {
   if (isAuthenticated() && window.location.hash === "#formularios") {
     activateView("formularios", false);
   }
+  renderSavedReports();
   if (isAuthenticated()) void syncOwnedReport();
 }
 
@@ -519,6 +522,7 @@ document.getElementById("login-form")?.addEventListener("submit", async (event) 
     message.textContent = "";
     form.reset();
     updateAuthUI();
+    renderSavedReports();
     closeHeaderPopover("account-button", "account-popover");
     history.pushState(null, "", "#formularios");
     activateView("formularios");
@@ -723,16 +727,17 @@ async function syncOwnedReport(reportRecord = null) {
   if (authState.username !== REPORT_OWNER_USERNAME || !authState.csrfToken) return null;
   if (reportSyncPromise) return reportSyncPromise;
 
+  reportSyncStatus = { state: "syncing", message: "Enviando anexos e relatório..." };
   const localReport = reportRecord?.id === IMPORTED_REPORT_ID
     ? reportRecord
     : getReports().find((report) => report.id === IMPORTED_REPORT_ID);
   if (!localReport) return null;
 
   reportSyncPromise = (async () => {
+    renderSavedReports();
     if (currentReportId === localReport.id) updateSaveIndicator("Sincronizando com o Firebase...");
 
     try {
-      applyAuthSession(await authRequest("/api/auth/session"));
       const preparedReport = await prepareReportForSync(localReport);
       const result = await authRequest("/api/reports/sync", {
         method: "POST",
@@ -740,14 +745,21 @@ async function syncOwnedReport(reportRecord = null) {
         body: JSON.stringify({ report: preparedReport }),
       });
       applySyncedAttachments(localReport.id, result);
+      reportSyncStatus = { state: "success", message: "Relatório e anexos salvos no Firebase" };
       if (currentReportId === localReport.id) updateSaveIndicator("Salvo no Firebase");
       return result;
     } catch (error) {
       console.error("Não foi possível sincronizar o relatório.", error);
+      reportSyncStatus = { state: "error", message: error.message || "Falha ao sincronizar" };
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+      }
       if (currentReportId === localReport.id) updateSaveIndicator("Salvo localmente · sincronização pendente");
       return null;
     } finally {
       reportSyncPromise = null;
+      renderSavedReports();
     }
   })();
 
@@ -1045,8 +1057,10 @@ function openReport(report = null) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function saveCurrentReport() {
+function saveCurrentReport(options = {}) {
   if (!ilpiForm) return;
+  const shouldSync = options?.sync !== false;
+  clearTimeout(localAutosaveTimer);
   const data = collectFormData();
   const reports = getReports();
   const index = reports.findIndex((report) => report.id === currentReportId);
@@ -1064,13 +1078,20 @@ function saveCurrentReport() {
     ...(index >= 0 && reports[index].cloud ? { cloud: reports[index].cloud } : {}),
   };
   if (index >= 0) reports[index] = record; else reports.unshift(record);
-  void syncOwnedReport(record);
   persistReports(reports);
   formIsDirty = false;
-  updateSaveIndicator("Salvo neste navegador");
+  updateSaveIndicator(shouldSync ? "Salvo neste navegador" : "Rascunho salvo automaticamente");
   document.getElementById("current-report-label").textContent = data.institutionName || "Novo diagnóstico";
   renderSavedReports();
+  if (shouldSync) void syncOwnedReport(record);
   return record;
+}
+
+function scheduleLocalAutosave() {
+  clearTimeout(localAutosaveTimer);
+  localAutosaveTimer = setTimeout(() => {
+    if (formIsDirty && currentReportId) saveCurrentReport({ sync: false });
+  }, 800);
 }
 
 function formatDate(value) {
@@ -1083,10 +1104,26 @@ function formatDateTime(value) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
+function cloudSyncMarkup(report) {
+  if (report.id !== IMPORTED_REPORT_ID) return "";
+  const cloudDate = report.cloud?.syncedAt ? formatDateTime(report.cloud.syncedAt) : "";
+  const cloudIsCurrent = Boolean(cloudDate && new Date(report.cloud.syncedAt) >= new Date(report.updatedAt));
+  const state = reportSyncStatus.state;
+  const label = state === "syncing"
+    ? reportSyncStatus.message
+    : state === "error"
+      ? `Falha: ${reportSyncStatus.message}`
+      : cloudIsCurrent
+        ? `Firebase atualizado em ${cloudDate}`
+        : "Sincronização com Firebase pendente";
+  const className = state === "error" ? "error" : state === "syncing" ? "syncing" : cloudIsCurrent ? "success" : "pending";
+  return `<small class="cloud-sync-status ${className}" title="${escapeAttribute(label)}">${escapeHtml(label)}</small>`;
+}
+
 function renderSavedReports() {
   const container = document.getElementById("saved-reports");
   const reports = getReports().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions"><button type="button" data-edit-report>Editar</button><button class="delete-report" type="button" data-delete-report>Excluir</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório salvo. Crie o primeiro diagnóstico ILPI.</div>';
+  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small>${cloudSyncMarkup(report)}</div><div class="report-actions">${report.id === IMPORTED_REPORT_ID && authState.username === REPORT_OWNER_USERNAME ? `<button type="button" data-sync-report ${reportSyncStatus.state === "syncing" ? "disabled" : ""}>${reportSyncStatus.state === "syncing" ? "Enviando..." : "Sincronizar"}</button>` : ""}<button type="button" data-edit-report>Editar</button><button class="delete-report" type="button" data-delete-report>Excluir</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório salvo. Crie o primeiro diagnóstico ILPI.</div>';
 }
 
 function updateSaveIndicator(customText) {
@@ -1098,6 +1135,7 @@ function markDirty() {
   formIsDirty = true;
   updateSaveIndicator();
   updateFormInsights();
+  scheduleLocalAutosave();
 }
 
 function updateFormInsights() {
@@ -1175,11 +1213,15 @@ document.getElementById("save-ilpi")?.addEventListener("click", saveCurrentRepor
 document.querySelectorAll("[data-save]").forEach((button) => button.addEventListener("click", saveCurrentReport));
 ilpiForm?.addEventListener("input", markDirty);
 ilpiForm?.addEventListener("change", markDirty);
-document.getElementById("saved-reports")?.addEventListener("click", (event) => {
+document.getElementById("saved-reports")?.addEventListener("click", async (event) => {
   const card = event.target.closest("[data-report-id]");
   if (!card) return;
   const reports = getReports();
   const report = reports.find((item) => item.id === card.dataset.reportId);
+  if (event.target.closest("[data-sync-report]")) {
+    await syncOwnedReport(report);
+    return;
+  }
   if (event.target.closest("[data-edit-report]")) openReport(report);
   if (event.target.closest("[data-delete-report]") && confirm(`Excluir o relatório de ${report?.data.institutionName || "esta instituição"}? Esta ação não pode ser desfeita.`)) {
     persistReports(reports.filter((item) => item.id !== card.dataset.reportId));
