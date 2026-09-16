@@ -322,8 +322,10 @@ if ("IntersectionObserver" in window) {
   animatedElements.forEach((element) => element.classList.add("visible"));
 }
 
-// Área profissional e banco local de diagnósticos ILPI.
-const ILPI_STORAGE_KEY = "octn.ilpi.reports.v1";
+// Área profissional e relatórios privados armazenados no Firebase.
+const LEGACY_ILPI_STORAGE_KEY = "octn.ilpi.reports.v1";
+localStorage.removeItem(LEGACY_ILPI_STORAGE_KEY);
+let reportsState = [];
 const configuredApiUrl = document.querySelector('meta[name="octn-api-url"]')?.content?.trim();
 const API_BASE_URL = (
   configuredApiUrl ||
@@ -331,10 +333,9 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 const authState = { authenticated: false, username: "", email: "", csrfToken: "" };
 const REPORT_OWNER_USERNAME = "grazielle.carvalho";
-const IMPORTED_REPORT_ID = "ilpi-gerovinda-2026-09-10";
 let reportSyncPromise = null;
 let reportSyncStatus = { state: "idle", message: "" };
-let localAutosaveTimer = null;
+
 const ilpiForm = document.getElementById("ilpi-form");
 const formsDashboard = document.getElementById("forms-dashboard");
 const ilpiWorkspace = document.getElementById("ilpi-workspace");
@@ -454,8 +455,8 @@ async function restoreAuthSession() {
   if (isAuthenticated() && window.location.hash === "#formularios") {
     activateView("formularios", false);
   }
-  renderSavedReports();
-  if (isAuthenticated()) void syncOwnedReport();
+  if (isAuthenticated()) await loadOwnedReports();
+  else renderSavedReports();
 }
 
 async function logout() {
@@ -470,6 +471,11 @@ async function logout() {
     console.warn("Não foi possível encerrar a sessão no servidor.", error);
   } finally {
     clearAuthSession();
+    reportsState = [];
+    currentReportId = null;
+    ilpiWorkspace.hidden = true;
+    formsDashboard.hidden = false;
+    renderSavedReports();
     updateAuthUI();
     history.pushState(null, "", "#home");
     activateView("home");
@@ -522,11 +528,10 @@ document.getElementById("login-form")?.addEventListener("submit", async (event) 
     message.textContent = "";
     form.reset();
     updateAuthUI();
-    renderSavedReports();
     closeHeaderPopover("account-button", "account-popover");
     history.pushState(null, "", "#formularios");
     activateView("formularios");
-    void syncOwnedReport();
+    await loadOwnedReports();
   } catch (error) {
     clearAuthSession();
     updateAuthUI();
@@ -640,16 +645,44 @@ function addAnnexRow(annex = {}) {
 }
 
 function getReports() {
-  try { return JSON.parse(localStorage.getItem(ILPI_STORAGE_KEY)) || []; }
-  catch { return []; }
+  return reportsState;
 }
 
 function persistReports(reports) {
+  reportsState = reports;
+}
+
+async function loadOwnedReports() {
+  if (!isAuthenticated() || authState.username !== REPORT_OWNER_USERNAME) {
+    reportsState = [];
+    renderSavedReports();
+    return;
+  }
+
+  reportSyncStatus = { state: "syncing", message: "Carregando relatórios do Firebase..." };
+  renderSavedReports();
   try {
-    localStorage.setItem(ILPI_STORAGE_KEY, JSON.stringify(reports));
+    const result = await authRequest("/api/reports");
+    reportsState = (result.reports || []).map((report) => ({
+      ...report,
+      cloud: {
+        owner: REPORT_OWNER_USERNAME,
+        firestorePath: `relatorios/${REPORT_OWNER_USERNAME}/itens/${report.id}`,
+        syncedAt: report.syncedAt || report.updatedAt || "",
+      },
+    }));
+    reportSyncStatus = { state: "success", message: "Relatórios carregados do Firebase" };
   } catch (error) {
-    alert("Não foi possível salvar: o armazenamento local está cheio. Remova ou reduza imagens dos anexos e tente novamente.");
-    throw error;
+    reportsState = [];
+    reportSyncStatus = { state: "error", message: error.message || "Falha ao carregar do Firebase" };
+    if (error.status === 401) {
+      clearAuthSession();
+      updateAuthUI();
+    }
+    console.error("Não foi possível carregar os relatórios do Firebase.", error);
+  } finally {
+    localStorage.removeItem(LEGACY_ILPI_STORAGE_KEY);
+    renderSavedReports();
   }
 }
 
@@ -728,15 +761,13 @@ async function syncOwnedReport(reportRecord = null) {
   if (authState.username !== REPORT_OWNER_USERNAME || !authState.csrfToken) return null;
   if (reportSyncPromise) return reportSyncPromise;
 
-  reportSyncStatus = { state: "syncing", message: "Enviando anexos e relatório..." };
-  const localReport = reportRecord?.id === IMPORTED_REPORT_ID
-    ? reportRecord
-    : getReports().find((report) => report.id === IMPORTED_REPORT_ID);
+  const localReport = reportRecord || getReports().find((report) => report.id === currentReportId);
   if (!localReport) return null;
+  reportSyncStatus = { state: "syncing", message: "Salvando relatório no Firebase..." };
 
   reportSyncPromise = (async () => {
     renderSavedReports();
-    if (currentReportId === localReport.id) updateSaveIndicator("Sincronizando com o Firebase...");
+    if (currentReportId === localReport.id) updateSaveIndicator("Salvando no Firebase...");
 
     try {
       const preparedReport = await prepareReportForSync(localReport);
@@ -746,17 +777,17 @@ async function syncOwnedReport(reportRecord = null) {
         body: JSON.stringify({ report: preparedReport }),
       });
       applySyncedAttachments(localReport.id, result);
-      reportSyncStatus = { state: "success", message: "Relatório e anexos salvos no Firebase" };
+      reportSyncStatus = { state: "success", message: "Relatório salvo no Firebase" };
       if (currentReportId === localReport.id) updateSaveIndicator("Salvo no Firebase");
       return result;
     } catch (error) {
-      console.error("Não foi possível sincronizar o relatório.", error);
-      reportSyncStatus = { state: "error", message: error.message || "Falha ao sincronizar" };
+      console.error("Não foi possível salvar o relatório no Firebase.", error);
+      reportSyncStatus = { state: "error", message: error.message || "Falha ao salvar no Firebase" };
       if (error.status === 401) {
         clearAuthSession();
         updateAuthUI();
       }
-      if (currentReportId === localReport.id) updateSaveIndicator("Salvo localmente · sincronização pendente");
+      if (currentReportId === localReport.id) updateSaveIndicator("Não salvo no Firebase · tente novamente");
       return null;
     } finally {
       reportSyncPromise = null;
@@ -765,234 +796,6 @@ async function syncOwnedReport(reportRecord = null) {
   })();
 
   return reportSyncPromise;
-}
-
-function createImportedReport() {
-  return {
-    id: "ilpi-gerovinda-2026-09-10",
-    createdAt: "2026-09-10T12:00:00.000Z",
-    updatedAt: new Date().toISOString(),
-    data: {
-      reportNumber: "RTC_ILPI-2026/A001", requesterCpf: "", version: "1.0", status: "Em elaboração",
-      subtitle: "Diagnóstico institucional, nutricional e do serviço de alimentação", issueCity: "Salvador/BA",
-      requestedBy: "Joseane Carvalho Lima", requestPurpose: "Produzir diagnóstico técnico da instituição e orientar melhorias relacionadas à assistência nutricional e ao serviço de alimentação.",
-      assessmentScope: "Caracterização da ILPI, perfil geral de saúde e dependência dos residentes, rotina alimentar, organização do serviço de alimentação e definição preliminar de prioridades.",
-      methodology: "Entrevista com a responsável, levantamento de informações institucionais, observação técnica em visita de campo e registro estruturado dos dados coletados.",
-      documentsReviewed: "Memorial descritivo do terreno e planta baixa/localização do terreno, apresentados em registro fotográfico e incorporados aos anexos DOC-01 e DOC-02.",
-      institutionName: "Geronvida", address: "Rua Geraldo Brasil, nº 3, Cajazeiras 11, Salvador/BA, CEP 41347-278",
-      institutionManager: "Joseane Carvalho Lima", phone: "(71) 99983-6631", activityStart: "2026-02-10", visitDate: "2026-09-10",
-      nutritionist: "Grazielle Matos", crn: "17272", totalResidents: "12", independentResidents: "4",
-      partialResidents: "2", dependentResidents: "6", bedriddenResidents: "3", foodEmployees: "1",
-      health0Count: "4", health0Note: "Quatro casos informados pela responsável no levantamento inicial.",
-      health1Count: "12", health1Note: "Doze casos informados pela responsável no levantamento inicial.",
-      health2Count: "2", health2Note: "Dois casos informados pela responsável no levantamento inicial.",
-      health3Count: "0", health3Note: "Nenhum caso informado no levantamento inicial.",
-      health4Count: "4", health4Note: "Quatro casos de perda de peso recente informados pela responsável.",
-      health5Count: "1", health5Note: "Um caso informado pela responsável no levantamento inicial.",
-      health6Count: "0", health6Note: "Nenhum caso informado no levantamento inicial.",
-      health7Count: "1", health7Note: "Um caso de uso de suplemento nutricional informado pela responsável.",
-      health8Count: "0", health8Note: "Nenhuma outra condição relevante foi informada no levantamento inicial.",
-      mealsPerDay: "5", plannedMenu: "Não", mealPlanner: "Cozinheira ou Joseane", acceptanceRecord: "Não", specialDiets: "Sim", specialDietsDetails: "Demência e Alzheimer — especificar a adaptação dietética adotada.",
-      meal0Time: "08:00", meal0Note: "Horário informado no levantamento inicial; preparação específica não detalhada.",
-      meal1Time: "10:00", meal1Note: "Horário informado no levantamento inicial; preparação específica não detalhada.",
-      meal2Time: "12:00", meal2Note: "Horário informado no levantamento inicial; preparação específica não detalhada.",
-      meal3Time: "15:00", meal3Note: "Horário informado no levantamento inicial; preparação específica não detalhada.",
-      meal4Time: "18:30", meal4Note: "Horário informado no levantamento inicial; preparação específica não detalhada.",
-      meal5Time: "", meal5Note: "Ceia não ofertada na rotina informada de cinco refeições diárias.",
-      kitchen0Status: "Não", kitchen1Status: "Não Avaliado", kitchen2Status: "Não", kitchen3Status: "Não Avaliado", kitchen4Status: "Não",
-      kitchen5Status: "Não", kitchen6Status: "Não Avaliado", kitchen7Status: "Sim", kitchen8Status: "Não Avaliado", kitchen9Status: "Não Avaliado",
-      kitchen10Status: "Não Avaliado", kitchen11Status: "Não Avaliado", kitchen12Status: "Não", kitchen13Status: "Não", kitchen14Status: "Não",
-      observation0Status: "Não Avaliado", observation0Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation1Status: "Não Avaliado", observation1Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation2Status: "Não Avaliado", observation2Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation3Status: "Não Avaliado", observation3Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation4Status: "Não Avaliado", observation4Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation5Status: "Não Avaliado", observation5Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation6Status: "Não Avaliado", observation6Note: "Aspecto não avaliado durante o levantamento inicial.",
-      observation7Status: "Não Avaliado", observation7Note: "Aspecto não avaliado durante o levantamento inicial.",
-      cookName: "Não informado", cookExperience: "Não informado", cookTraining: "Não",
-      cookPlanning: "As refeições são definidas pela cozinheira ou por Joseane, conforme informação registrada no levantamento inicial.",
-      cookDifficulties: "Foram identificadas falta de treinamento e ausência de padronização documentada dos processos.",
-      mostAcceptedFoods: "Não informado durante o levantamento inicial.",
-      mostRejectedFoods: "Não informado durante o levantamento inicial.",
-      foodPurchases: "Não informado durante o levantamento inicial.",
-      specialDietDifficulties: "Não informado durante o levantamento inicial.",
-      missingResources: "Não foram informados equipamentos ou recursos ausentes; foram registradas necessidades de reparos estruturais.",
-      immediatePriority: "Adequar imediatamente a oferta para, no mínimo, seis refeições diárias; realizar avaliação nutricional individual dos residentes, com prioridade para os quatro casos de perda de peso recente; regularizar os documentos institucionais, sanitários e individuais dos residentes; e iniciar a implantação do cardápio, dos controles e das métricas de padronização.",
-      shortPriority: "Elaborar cardápio planejado, formalizar as dietas especiais e implantar registro de aceitação alimentar.",
-      mediumPriority: "Implantar indicadores de acompanhamento nutricional e revisar periodicamente o plano de cuidado alimentar da instituição.",
-      diagnosticOpinion: "O levantamento inicial evidencia riscos nutricionais, sanitários, assistenciais e de gestão que exigem intervenção estruturada. Entre os 12 residentes, foi informada perda de peso recente em quatro pessoas (33,3%), além de elevada ocorrência de hipertensão, casos de diabetes, dependência funcional e residentes acamados, condições que demandam avaliação nutricional individual e acompanhamento registrado. A instituição oferece cinco refeições diárias, abaixo do mínimo de seis para ILPI, não apresentou cardápio planejado e reconhece a existência de dietas especiais ainda sem formalização suficiente. No serviço de alimentação, foram relatadas falhas de identificação e validade, ausência de registros de temperatura, armazenamento de alimentos no chão, inadequações estruturais e falta de treinamento documentado. Somam-se a isso pendências sanitárias e documentais, ausência de padronização dos processos e de Plano de Trabalho. As prioridades imediatas são regularizar a documentação, garantir seis refeições diárias, avaliar os residentes com perda de peso e corrigir os riscos higiênico-sanitários da cozinha.",
-      strengths: "A responsável participou do levantamento e forneceu informações sobre a rotina institucional e o perfil de saúde dos residentes, permitindo o mapeamento inicial das necessidades. A instituição mantém cinco horários de refeições definidos, identifica a existência de dietas especiais e reconhece residentes com maior vulnerabilidade nutricional. Também foram informados os quantitativos por grau de dependência e as principais condições de saúde, constituindo uma base inicial para avaliações individualizadas, planejamento do cardápio e acompanhamento das adequações.",
-      limitations: "O diagnóstico retrata a visita de 10/09/2026 e baseia-se principalmente em entrevista, informações fornecidas pela responsável e observações pontuais. Não foram apresentados para análise completa o alvará e os demais documentos sanitários, os registros individuais integrais dos residentes, prontuários, prescrições, exames, histórico antropométrico, cardápio planejado, controles de temperatura, comprovantes de treinamento, Manual de Boas Práticas ou POP. Foram incorporados registros fotográficos do armazenamento de alimentos e reproduções fotográficas do memorial descritivo e da planta baixa/localização do terreno como evidências complementares. Essas imagens representam as condições e os documentos apresentados no momento da visita e não substituem a verificação dos originais nem o acompanhamento integral das etapas de produção e distribuição das refeições. Portanto, os quantitativos e as condições clínicas informadas precisam de confirmação documental e avaliação individual, e os achados devem ser reavaliados após as adequações.",
-      contentRevision: 4,
-      annexRevision: 3,
-      completionRevision: 1,
-      consultancyRevision: 1,
-      summaryPriorityRevision: 1,
-      reportNumberRevision: 1,
-      mealCountRevision: 1,
-      recommendations: "Recomenda-se que a instituição execute as adequações de forma escalonada, priorizando os riscos sanitários, nutricionais, assistenciais e documentais que podem comprometer a segurança e a qualidade do cuidado aos residentes. A gestão deve formalizar responsáveis e prazos, cabendo à gestão designar ou contratar profissional habilitado para conduzir a avaliação individual, o planejamento do cardápio, a definição das dietas especiais e os controles do serviço de alimentação. Todas as medidas adotadas devem ser comprovadas por registros, documentos e fotografias, acompanhadas semanalmente nos primeiros 30 dias e reavaliadas tecnicamente após a implantação, com atualização contínua do plano de ação.",
-      findings: [
-        { area: "Assistência ao residente", classification: "Risco assistencial", finding: "Foi informada perda de peso recente em quatro dos 12 residentes (33,3% do total).", evidence: "Relato registrado no levantamento inicial de 10/09/2026.", reference: "Resolução CFN nº 600/2018, Anexo II, itens II.C.1.2, II.C.1.3 e II.C.1.5", guidance: "Realizar avaliação nutricional individual, elaborar diagnóstico e prescrição dietética quando indicada e registrar a evolução nutricional no prontuário.", priority: "Imediata" },
-        { area: "Alimentação e nutrição", classification: "Não conformidade", finding: "Não foi apresentado cardápio planejado para as refeições da instituição.", evidence: "Informação prestada pela responsável durante a visita de 10/09/2026.", reference: "Lei nº 8.234/1991, art. 3º, II; Resolução CFN nº 600/2018, Anexo II, item I.A.1.1.1.1", guidance: "Elaborar e implantar cardápio sob responsabilidade de nutricionista, com base no diagnóstico nutricional da clientela e contemplando necessidades, consistências, hábitos alimentares e viabilidade operacional.", priority: "Imediata" },
-        { area: "Alimentação e nutrição", classification: "Não conformidade", finding: "A rotina informada registra cinco refeições diárias, abaixo do mínimo de seis exigido para ILPI.", evidence: "Relato da responsável e cinco horários de refeições registrados no levantamento inicial de 10/09/2026.", reference: "RDC Anvisa nº 502/2021, art. 44", guidance: "Adequar imediatamente a rotina para, no mínimo, seis refeições diárias e alinhar o total informado, os horários, o cardápio e a prática efetiva.", priority: "Imediata" },
-        { area: "Documentação", classification: "Risco crítico", finding: "Não foram apresentados os documentos sanitários da instituição, e os registros individuais dos residentes estão incompletos.", evidence: "Relato registrado no levantamento inicial de 10/09/2026 e entrevista com a responsável durante a visita.", reference: "RDC Anvisa nº 502/2021, arts. 8º, 13 e 33; Lei nº 10.741/2003, art. 50, XV", guidance: "Regularizar e manter atualizados, organizados e de fácil acesso o alvará sanitário, os documentos institucionais e os registros individuais de cada residente.", priority: "Imediata" },
-        { area: "Cozinha / boas práticas", classification: "Não conformidade", finding: "Foram observados alimentos prontos sem identificação e prazo de validade, ausência de registros de temperatura e alimentos armazenados em caixas diretamente no chão.", evidence: "Observação direta, registros fotográficos FOTO-01 a FOTO-05 e informações prestadas pela responsável durante a visita de 10/09/2026.", reference: "RDC Anvisa nº 502/2021, arts. 45 e 46, II e III; RDC Anvisa nº 216/2004, Anexo, itens 4.7.6, 4.8.18, 4.9.1 e 4.9.2", guidance: "Identificar os alimentos com nome, datas de preparo e validade; monitorar e registrar as temperaturas; armazenar os produtos fora do chão, em estrados ou prateleiras adequados; e implantar as rotinas correspondentes.", priority: "Imediata" },
-        { area: "Estrutura física", classification: "Não conformidade", finding: "Não há organização adequada entre as áreas de armazenamento e preparo; há alimentos no chão e instalações elétricas, hidráulicas, paredes e pisos necessitando de reparos.", evidence: "Observação direta, registros fotográficos FOTO-01 a FOTO-05 e informações prestadas pela responsável durante a visita de 10/09/2026.", reference: "RDC Anvisa nº 502/2021, art. 45; RDC Anvisa nº 216/2004, Anexo, itens 4.1.2, 4.1.3, 4.1.9 e 4.7.6", guidance: "Organizar o fluxo entre armazenamento e preparo para prevenir contaminação cruzada, retirar os alimentos do chão e reparar pisos, paredes e instalações elétricas e hidráulicas.", priority: "Alta" },
-        { area: "Equipe", classification: "Não conformidade", finding: "Não foram comprovados treinamento periódico dos manipuladores nem padronização documentada dos processos de alimentação.", evidence: "Relato registrado no levantamento inicial de 10/09/2026 e entrevista com a responsável durante a visita.", reference: "RDC Anvisa nº 502/2021, art. 46; RDC Anvisa nº 216/2004, Anexo, itens 4.6.7, 4.11.1 a 4.11.3 e 4.12.1 a 4.12.2", guidance: "Elaborar e implantar o Manual de Boas Práticas e os POP, definir responsabilidades, capacitar periodicamente os manipuladores e manter registros comprobatórios dos treinamentos.", priority: "Alta" },
-        { area: "Gestão", classification: "Não conformidade", finding: "Não foi apresentado Plano de Trabalho nem instrumento para planejar, acompanhar e revisar as ações institucionais.", evidence: "Relato registrado no levantamento inicial de 10/09/2026 e entrevista com a responsável durante a visita.", reference: "RDC Anvisa nº 502/2021, arts. 31 e 32", guidance: "Elaborar o Plano de Trabalho institucional e desdobrá-lo em plano de ação com responsáveis, prazos, situação e revisão periódica, considerando a participação dos residentes.", priority: "Moderada" }
-      ],
-      residents: [], actions: [
-        { action: "Regularizar o alvará sanitário, organizar os documentos institucionais e completar os registros individuais dos residentes.", priority: "Imediata", responsible: "Gestão e responsável legal da instituição", deadline: "7 dias", status: "Pendente" },
-        { action: "Adequar a rotina para, no mínimo, seis refeições diárias e formalizar os respectivos horários.", priority: "Imediata", responsible: "Gestão e nutricionista designado pela instituição", deadline: "7 dias", status: "Pendente" },
-        { action: "Realizar avaliação nutricional individual dos quatro residentes com perda de peso recente e registrar diagnóstico, prescrição e evolução.", priority: "Imediata", responsible: "Nutricionista designado pela instituição", deadline: "15 dias", status: "Pendente" },
-        { action: "Elaborar e implantar cardápio planejado, incluindo consistências, dietas especiais, necessidades clínicas, controles e métricas de padronização.", priority: "Imediata", responsible: "Nutricionista designado pela instituição", deadline: "30 dias", status: "Pendente" },
-        { action: "Identificar os alimentos, controlar datas de preparo e validade, registrar temperaturas e retirar os produtos do chão.", priority: "Imediata", responsible: "Gestão e equipe da cozinha", deadline: "48 horas", status: "Pendente" },
-        { action: "Organizar o fluxo entre armazenamento e preparo e executar reparos em pisos, paredes e instalações elétricas e hidráulicas.", priority: "Alta", responsible: "Gestão e manutenção", deadline: "30 dias", status: "Pendente" },
-        { action: "Elaborar e implantar o Manual de Boas Práticas e os Procedimentos Operacionais Padronizados.", priority: "Alta", responsible: "Gestão e nutricionista designado pela instituição", deadline: "30 dias", status: "Pendente" },
-        { action: "Capacitar os manipuladores em boas práticas e manter registros comprobatórios dos treinamentos.", priority: "Alta", responsible: "Nutricionista designado pela instituição", deadline: "15 dias", status: "Pendente" },
-        { action: "Elaborar o Plano de Trabalho e acompanhar as ações com responsáveis, prazos, status e evidências.", priority: "Moderada", responsible: "Gestão e equipe multiprofissional", deadline: "30 dias", status: "Pendente" },
-        { action: "Registrar as adequações e realizar nova avaliação técnica para verificar o cumprimento das medidas.", priority: "Moderada", responsible: "Gestão da instituição e consultoria contratada", deadline: "60 dias", status: "Pendente" }
-      ], annexes: [
-        { type: "Registro fotográfico", title: "Armazenamento de alimentos — registro 1", date: "2026-09-10", code: "AT-05 / AT-06 · FOTO-01", description: "Evidência fotográfica complementar das condições de armazenamento de alimentos observadas na visita, relacionada aos achados de boas práticas e estrutura física.", fileName: "armazenamento-alimento-1.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/Z62BY5ZH/armazenamento-alimento-1.jpg", imageUrl: "https://i.ibb.co/Z62BY5ZH/armazenamento-alimento-1.jpg", imageStorage: "imgbb" },
-        { type: "Registro fotográfico", title: "Armazenamento de alimentos — registro 2", date: "2026-09-10", code: "AT-05 / AT-06 · FOTO-02", description: "Evidência fotográfica complementar das condições de armazenamento de alimentos observadas na visita, relacionada aos achados de boas práticas e estrutura física.", fileName: "armazenamento-alimento-2.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/BHkJhGth/armazenamento-alimento-2.jpg", imageUrl: "https://i.ibb.co/BHkJhGth/armazenamento-alimento-2.jpg", imageStorage: "imgbb" },
-        { type: "Registro fotográfico", title: "Armazenamento de alimentos — registro 3", date: "2026-09-10", code: "AT-05 / AT-06 · FOTO-03", description: "Evidência fotográfica complementar das condições de armazenamento de alimentos observadas na visita, relacionada aos achados de boas práticas e estrutura física.", fileName: "armazenamento-alimento-3.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/KcHrBt9q/armazenamento-alimento-3.jpg", imageUrl: "https://i.ibb.co/KcHrBt9q/armazenamento-alimento-3.jpg", imageStorage: "imgbb" },
-        { type: "Registro fotográfico", title: "Armazenamento de alimentos — registro 4", date: "2026-09-10", code: "AT-05 / AT-06 · FOTO-04", description: "Evidência fotográfica complementar das condições de armazenamento de alimentos observadas na visita, relacionada aos achados de boas práticas e estrutura física.", fileName: "armazenamento-alimento-4.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/zHPy0Dkm/armazenamento-alimento-4.jpg", imageUrl: "https://i.ibb.co/zHPy0Dkm/armazenamento-alimento-4.jpg", imageStorage: "imgbb" },
-        { type: "Registro fotográfico", title: "Armazenamento de alimentos — registro 5", date: "2026-09-10", code: "AT-05 / AT-06 · FOTO-05", description: "Evidência fotográfica complementar das condições de armazenamento de alimentos observadas na visita, relacionada aos achados de boas práticas e estrutura física.", fileName: "armazenamento-alimento-5.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/Q30Kyn4j/armazenamento-alimento-5.jpg", imageUrl: "https://i.ibb.co/Q30Kyn4j/armazenamento-alimento-5.jpg", imageStorage: "imgbb" },
-        { type: "Documento consultado", title: "Memorial descritivo do terreno", date: "2026-09-10", code: "DOC-01", description: "Registro fotográfico do memorial descritivo do terreno, incorporado como documentação complementar da estrutura e da caracterização física da instituição.", fileName: "memorial-descritivo-terreno.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/n85xY5tJ/memorial-descritivo-terreno.jpg", imageUrl: "https://i.ibb.co/n85xY5tJ/memorial-descritivo-terreno.jpg", imageStorage: "imgbb" },
-        { type: "Documento consultado", title: "Planta baixa e localização do terreno", date: "2026-09-10", code: "DOC-02", description: "Registro fotográfico da planta baixa e da localização do terreno, incorporado como documentação complementar da estrutura física da instituição.", fileName: "planta-baixa-localizacao-terreno.jpg", fileType: "image/jpeg", dataUrl: "https://i.ibb.co/7t0sfTT5/planta-baixa-localizacao-terreno.jpg", imageUrl: "https://i.ibb.co/7t0sfTT5/planta-baixa-localizacao-terreno.jpg", imageStorage: "imgbb" }
-      ], reviewConfirmed: ""
-    }
-  };
-}
-
-function seedLocalDatabase() {
-  if (localStorage.getItem(ILPI_STORAGE_KEY) === null) {
-    persistReports([createImportedReport()]);
-    return;
-  }
-  const reports = getReports();
-  const imported = reports.find((report) => report.id === "ilpi-gerovinda-2026-09-10");
-  if (imported) {
-    const defaults = createImportedReport().data;
-    const storedContentRevision = Number(imported.data.contentRevision || 0);
-    const storedAnnexRevision = Number(imported.data.annexRevision || 0);
-    const storedCompletionRevision = Number(imported.data.completionRevision || 0);
-    const storedConsultancyRevision = Number(imported.data.consultancyRevision || 0);
-    const storedSummaryPriorityRevision = Number(imported.data.summaryPriorityRevision || 0);
-    const storedReportNumberRevision = Number(imported.data.reportNumberRevision || 0);
-    const storedMealCountRevision = Number(imported.data.mealCountRevision || 0);
-    Object.entries(defaults).forEach(([key, value]) => {
-      if (imported.data[key] === undefined) imported.data[key] = value;
-    });
-    if (imported.data.institutionName === "Gerovinda") imported.data.institutionName = "Geronvida";
-    Object.keys(imported.data).filter((key) => key.startsWith("normative")).forEach((key) => delete imported.data[key]);
-    if (imported.data.methodology?.includes("Os itens não avaliados ou sem evidência disponível")) imported.data.methodology = defaults.methodology;
-    if (imported.data.documentsReviewed?.startsWith("Nenhum documento complementar")) imported.data.documentsReviewed = "";
-    if (imported.data.immediatePriority?.includes("validar a divergência entre o número de refeições")) imported.data.immediatePriority = defaults.immediatePriority;
-
-    if (storedContentRevision < defaults.contentRevision) {
-      const normalizedFinding = (finding) => finding.finding?.toLocaleLowerCase("pt-BR") || "";
-      const findingMigrations = [
-        { match: (finding) => finding.area === "Assistência ao residente" && normalizedFinding(finding).includes("perda de peso recente"), replacement: defaults.findings[0] },
-        { match: (finding) => finding.area === "Alimentação e nutrição" && normalizedFinding(finding).includes("cardápio planejado"), replacement: defaults.findings[1] },
-        { match: (finding) => finding.area === "Alimentação e nutrição" && normalizedFinding(finding).includes("mínimo de seis"), replacement: defaults.findings[2] },
-        { match: (finding) => finding.area === "Documentação" && normalizedFinding(finding).includes("documentos"), replacement: defaults.findings[3] },
-        { match: (finding) => finding.area === "Cozinha / boas práticas" && normalizedFinding(finding).includes("alimentos prontos"), replacement: defaults.findings[4] },
-        { match: (finding) => finding.area === "Estrutura física" && normalizedFinding(finding).includes("armazenamento e preparo"), replacement: defaults.findings[5] },
-        { match: (finding) => finding.area === "Equipe" && normalizedFinding(finding).includes("treinamento"), replacement: defaults.findings[6] },
-        { match: (finding) => finding.area === "Gestão" && (normalizedFinding(finding).includes("mapa de ações") || normalizedFinding(finding).includes("plano de trabalho")), replacement: defaults.findings[7] }
-      ];
-      findingMigrations.forEach(({ match, replacement }) => {
-        const finding = imported.data.findings?.find(match);
-        if (finding) Object.assign(finding, replacement);
-      });
-      imported.data.actions = defaults.actions.map((action) => ({ ...action }));
-      imported.data.diagnosticOpinion = defaults.diagnosticOpinion;
-      imported.data.strengths = defaults.strengths;
-      imported.data.limitations = defaults.limitations;
-      imported.data.recommendations = defaults.recommendations;
-      imported.data.contentRevision = defaults.contentRevision;
-    }
-    if (storedAnnexRevision < defaults.annexRevision) {
-      const existingAnnexes = Array.isArray(imported.data.annexes) ? imported.data.annexes : [];
-      defaults.annexes.forEach((defaultAnnex) => {
-        const existingAnnex = existingAnnexes.find((annex) => annex.code === defaultAnnex.code || annex.fileName === defaultAnnex.fileName);
-        if (existingAnnex) Object.assign(existingAnnex, defaultAnnex);
-        else existingAnnexes.push({ ...defaultAnnex });
-      });
-      imported.data.annexes = existingAnnexes;
-      if (!String(imported.data.documentsReviewed || "").trim()) imported.data.documentsReviewed = defaults.documentsReviewed;
-      if (imported.data.limitations?.includes("Foram incorporados registros fotográficos como evidências complementares")) imported.data.limitations = defaults.limitations;
-      const storageFinding = imported.data.findings?.find((finding) => finding.area === "Cozinha / boas práticas" && finding.finding?.toLocaleLowerCase("pt-BR").includes("alimentos prontos"));
-      const structureFinding = imported.data.findings?.find((finding) => finding.area === "Estrutura física" && finding.finding?.toLocaleLowerCase("pt-BR").includes("armazenamento e preparo"));
-      if (storageFinding) storageFinding.evidence = defaults.findings[4].evidence;
-      if (structureFinding) structureFinding.evidence = defaults.findings[5].evidence;
-      imported.data.annexRevision = defaults.annexRevision;
-    }
-    if (storedCompletionRevision < defaults.completionRevision) {
-      const completionFields = [
-        "acceptanceRecord",
-        "health0Note", "health1Note", "health2Note", "health3Note", "health4Note", "health5Note", "health6Note", "health7Note", "health8Count", "health8Note",
-        "meal0Note", "meal1Note", "meal2Note", "meal3Note", "meal4Note", "meal5Note",
-        "cookName", "cookExperience", "cookTraining", "cookPlanning", "cookDifficulties", "mostAcceptedFoods", "mostRejectedFoods", "foodPurchases", "specialDietDifficulties", "missingResources"
-      ];
-      for (let index = 0; index < kitchenItems.length; index += 1) completionFields.push("kitchen" + index + "Status");
-      for (let index = 0; index < observationItems.length; index += 1) {
-        completionFields.push("observation" + index + "Status", "observation" + index + "Note");
-      }
-      completionFields.forEach((key) => {
-        if (!String(imported.data[key] || "").trim()) imported.data[key] = defaults[key];
-      });
-      imported.data.completionRevision = defaults.completionRevision;
-    }
-    if (storedConsultancyRevision < defaults.consultancyRevision) {
-      defaults.actions.forEach((defaultAction) => {
-        const savedAction = imported.data.actions?.find((action) => action.action === defaultAction.action);
-        if (savedAction) savedAction.responsible = defaultAction.responsible;
-      });
-      if (imported.data.recommendations?.includes("enquanto a nutricionista coordena")) imported.data.recommendations = defaults.recommendations;
-      imported.data.consultancyRevision = defaults.consultancyRevision;
-    }
-    if (storedSummaryPriorityRevision < defaults.summaryPriorityRevision) {
-      const weightLossFinding = imported.data.findings?.find((finding) => finding.area === "Assistência ao residente" && finding.finding?.toLocaleLowerCase("pt-BR").includes("perda de peso recente"));
-      const menuFinding = imported.data.findings?.find((finding) => finding.area === "Alimentação e nutrição" && finding.finding?.toLocaleLowerCase("pt-BR").includes("cardápio planejado"));
-      if (weightLossFinding) weightLossFinding.priority = defaults.findings[0].priority;
-      if (menuFinding) menuFinding.priority = defaults.findings[1].priority;
-      const nutritionAction = imported.data.actions?.find((action) => action.action?.startsWith("Realizar avaliação nutricional individual dos quatro residentes"));
-      const menuAction = imported.data.actions?.find((action) => action.action?.startsWith("Elaborar e implantar cardápio planejado"));
-      if (nutritionAction) {
-        nutritionAction.priority = defaults.actions[2].priority;
-        nutritionAction.responsible = defaults.actions[2].responsible;
-      }
-      if (menuAction) Object.assign(menuAction, { action: defaults.actions[3].action, priority: defaults.actions[3].priority, responsible: defaults.actions[3].responsible });
-      if (imported.data.immediatePriority?.includes("avaliar individualmente os quatro residentes")) imported.data.immediatePriority = defaults.immediatePriority;
-      imported.data.summaryPriorityRevision = defaults.summaryPriorityRevision;
-    }
-    if (storedReportNumberRevision < defaults.reportNumberRevision) {
-      if (imported.data.reportNumber === "OCTN-ILPI-2026-001") imported.data.reportNumber = defaults.reportNumber;
-      imported.data.reportNumberRevision = defaults.reportNumberRevision;
-    }
-    if (storedMealCountRevision < defaults.mealCountRevision) {
-      if (Number(imported.data.mealsPerDay) === 4) imported.data.mealsPerDay = "5";
-      const correctMealCountText = (value) => typeof value === "string"
-        ? value.replace(/\b4\s+refeições\b/gi, "5 refeições").replace(/\bquatro\s+refeições\b/gi, "cinco refeições")
-        : value;
-      ["diagnosticOpinion", "strengths", "limitations", "recommendations", "immediatePriority", "shortPriority", "mediumPriority"].forEach((key) => {
-        imported.data[key] = correctMealCountText(imported.data[key]);
-      });
-      imported.data.findings?.forEach((finding) => {
-        ["finding", "evidence", "reference", "guidance"].forEach((key) => {
-          finding[key] = correctMealCountText(finding[key]);
-        });
-      });
-      imported.data.actions?.forEach((action) => {
-        action.action = correctMealCountText(action.action);
-      });
-      imported.data.mealCountRevision = defaults.mealCountRevision;
-    }
-    persistReports(reports);
-  }
 }
 
 function collectDynamicRows(containerId) {
@@ -1059,10 +862,8 @@ function openReport(report = null) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function saveCurrentReport(options = {}) {
-  if (!ilpiForm) return;
-  const shouldSync = options?.sync !== false;
-  clearTimeout(localAutosaveTimer);
+function saveCurrentReport() {
+  if (!ilpiForm || !isAuthenticated()) return;
   const data = collectFormData();
   const reports = getReports();
   const index = reports.findIndex((report) => report.id === currentReportId);
@@ -1082,18 +883,11 @@ function saveCurrentReport(options = {}) {
   if (index >= 0) reports[index] = record; else reports.unshift(record);
   persistReports(reports);
   formIsDirty = false;
-  updateSaveIndicator(shouldSync ? "Salvo neste navegador" : "Rascunho salvo automaticamente");
+  updateSaveIndicator("Salvando no Firebase...");
   document.getElementById("current-report-label").textContent = data.institutionName || "Novo diagnóstico";
   renderSavedReports();
-  if (shouldSync) void syncOwnedReport(record);
+  void syncOwnedReport(record);
   return record;
-}
-
-function scheduleLocalAutosave() {
-  clearTimeout(localAutosaveTimer);
-  localAutosaveTimer = setTimeout(() => {
-    if (formIsDirty && currentReportId) saveCurrentReport({ sync: false });
-  }, 800);
 }
 
 function formatDate(value) {
@@ -1107,7 +901,6 @@ function formatDateTime(value) {
 }
 
 function cloudSyncMarkup(report) {
-  if (report.id !== IMPORTED_REPORT_ID) return "";
   const cloudDate = report.cloud?.syncedAt ? formatDateTime(report.cloud.syncedAt) : "";
   const cloudIsCurrent = Boolean(cloudDate && new Date(report.cloud.syncedAt) >= new Date(report.updatedAt));
   const state = reportSyncStatus.state;
@@ -1117,15 +910,15 @@ function cloudSyncMarkup(report) {
       ? `Falha: ${reportSyncStatus.message}`
       : cloudIsCurrent
         ? `Firebase atualizado em ${cloudDate}`
-        : "Sincronização com Firebase pendente";
+        : "Salvamento no Firebase pendente";
   const className = state === "error" ? "error" : state === "syncing" ? "syncing" : cloudIsCurrent ? "success" : "pending";
   return `<small class="cloud-sync-status ${className}" title="${escapeAttribute(label)}">${escapeHtml(label)}</small>`;
 }
 
 function renderSavedReports() {
   const container = document.getElementById("saved-reports");
-  const reports = getReports().sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small>${cloudSyncMarkup(report)}</div><div class="report-actions">${report.id === IMPORTED_REPORT_ID && authState.username === REPORT_OWNER_USERNAME ? `<button type="button" data-sync-report ${reportSyncStatus.state === "syncing" ? "disabled" : ""}>${reportSyncStatus.state === "syncing" ? "Enviando..." : "Sincronizar"}</button>` : ""}<button type="button" data-edit-report>Editar</button><button class="delete-report" type="button" data-delete-report>Excluir</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório salvo. Crie o primeiro diagnóstico ILPI.</div>';
+  const reports = [...getReports()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small>${cloudSyncMarkup(report)}</div><div class="report-actions"><button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível no Firebase para esta conta.</div>';
 }
 
 function updateSaveIndicator(customText) {
@@ -1137,7 +930,6 @@ function markDirty() {
   formIsDirty = true;
   updateSaveIndicator();
   updateFormInsights();
-  scheduleLocalAutosave();
 }
 
 function updateFormInsights() {
@@ -1220,18 +1012,11 @@ document.getElementById("saved-reports")?.addEventListener("click", async (event
   if (!card) return;
   const reports = getReports();
   const report = reports.find((item) => item.id === card.dataset.reportId);
-  if (event.target.closest("[data-sync-report]")) {
-    await syncOwnedReport(report);
-    return;
-  }
   if (event.target.closest("[data-edit-report]")) openReport(report);
-  if (event.target.closest("[data-delete-report]") && confirm(`Excluir o relatório de ${report?.data.institutionName || "esta instituição"}? Esta ação não pode ser desfeita.`)) {
-    persistReports(reports.filter((item) => item.id !== card.dataset.reportId));
-    renderSavedReports();
-  }
 });
 
-seedLocalDatabase();
+localStorage.removeItem(LEGACY_ILPI_STORAGE_KEY);
+
 renderFixedRows();
 setupSectionNavigation();
 renderSavedReports();

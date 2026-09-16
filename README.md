@@ -20,8 +20,9 @@ Depois, acesse `http://localhost:8080`.
   `grazielle.carvalho@octn.com.br` antes da autenticação no Firebase.
 - Nenhum token Firebase é salvo no JavaScript, `localStorage` ou `sessionStorage`.
 - A sessão usa cookie seguro e `HttpOnly`, validado pelo backend.
-- O relatório `ilpi-gerovinda-2026-09-10` continua salvo localmente e é
-  sincronizado em `relatorios/grazielle.carvalho/itens` no Firestore.
+- Os relatórios são carregados exclusivamente de
+  `relatorios/grazielle.carvalho/itens` no Firestore após a autenticação da
+  proprietária; o frontend não mantém cópia em `localStorage`.
 - Fotografias anexadas são reduzidas no navegador e enviadas ao ImgBB pelo
   backend; a chave ImgBB nunca é incluída no frontend.
 - PDFs e planilhas são relacionados apenas pelo nome no índice de anexos.
