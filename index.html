@@ -23,8 +23,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=11" />
-    <script src="./script.js?v=3" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=12" />
+    <script src="./script.js?v=4" defer></script>
   </head>
   <body>
     <button class="skip-link" type="button" data-scroll-target="conteudo">Pular para o conteúdo</button>
@@ -37,13 +37,68 @@
             alt="OCTN — Organização de Consultoria Técnica Nutricional"
           />
         </button>
-        <nav class="primary-nav" aria-label="Navegação principal">
-          <button type="button" data-view-link="home" class="active">Home</button>
-          <button type="button" data-view-link="consultoria">Consultoria</button>
-          <button type="button" data-view-link="servicos">Serviços</button>
-          <button type="button" data-view-link="capacitacao">Capacitação</button>
-          <button type="button" data-view-link="formularios" id="forms-nav" hidden>Formulários</button>
-        </nav>
+        <div class="header-content">
+          <nav class="primary-nav" aria-label="Navegação principal">
+            <button type="button" data-view-link="home" class="active">Home</button>
+            <button type="button" data-view-link="consultoria">Consultoria</button>
+            <button type="button" data-view-link="capacitacao">Capacitação</button>
+          </nav>
+
+          <div class="header-actions">
+            <button
+              class="header-icon-button menu-toggle"
+              id="internal-menu-button"
+              type="button"
+              aria-label="Abrir menu interno"
+              aria-controls="internal-menu"
+              aria-expanded="false"
+              hidden
+            >
+              <span aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
+            </button>
+            <nav class="header-popover internal-menu" id="internal-menu" aria-label="Menu interno" hidden>
+              <button type="button" data-view-link="formularios" id="forms-nav">
+                <span>Formulários</span><small>Documentos e relatórios</small>
+              </button>
+              <button type="button" data-view-link="servicos">
+                <span>Serviços</span><small>Serviços e honorários</small>
+              </button>
+            </nav>
+
+            <button
+              class="header-icon-button account-button"
+              id="account-button"
+              type="button"
+              aria-label="Entrar na área profissional"
+              aria-controls="account-popover"
+              aria-expanded="false"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0" />
+              </svg>
+              <span class="account-status-dot" aria-hidden="true"></span>
+            </button>
+            <div class="header-popover account-popover" id="account-popover" hidden>
+              <div class="account-popover-heading">
+                <span class="section-kicker">Área profissional</span>
+                <strong id="account-popover-title">Entrar na OCTN</strong>
+              </div>
+              <form class="login-form header-login-form" id="login-form" autocomplete="on">
+                <label><span>Login</span><input type="text" name="username" autocomplete="username" required /></label>
+                <label><span>Senha</span><input type="password" name="password" autocomplete="current-password" required /></label>
+                <button class="button button-primary" type="submit">Entrar</button>
+                <p class="form-message" id="login-message" role="status" aria-live="polite"></p>
+              </form>
+              <div class="logged-panel header-logged-panel" id="logged-panel" hidden>
+                <span class="online-dot" aria-hidden="true"></span>
+                <div><strong>Sessão ativa</strong><small>Menu interno liberado.</small></div>
+                <button class="text-button" type="button" id="logout-button">Sair</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -269,17 +324,12 @@
             <h2 id="access-title">Acesso aos formulários e relatórios.</h2>
             <p>Ambiente reservado para elaboração, armazenamento local e emissão dos documentos técnicos OCTN.</p>
           </div>
-          <form class="login-form" id="login-form" autocomplete="on">
-            <label><span>Login</span><input type="text" name="username" autocomplete="username" required /></label>
-            <label><span>Senha</span><input type="password" name="password" autocomplete="current-password" required /></label>
-            <button class="button button-primary" type="submit">Entrar</button>
-            <p class="form-message" id="login-message" role="status" aria-live="polite"></p>
-          </form>
-          <div class="logged-panel" id="logged-panel" hidden>
-            <span class="online-dot" aria-hidden="true"></span>
-            <div><strong>Sessão administrativa ativa</strong><small>Os formulários estão disponíveis no menu principal.</small></div>
-            <button class="button button-primary" type="button" data-view-link="formularios">Abrir formulários</button>
-            <button class="text-button" type="button" id="logout-button">Sair</button>
+          <div class="access-header-login">
+            <span class="access-avatar" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0" /></svg>
+            </span>
+            <div><strong>Login no cabeçalho</strong><small>Use o avatar no canto superior direito para entrar.</small></div>
+            <button class="button button-primary" type="button" id="open-header-login">Acessar</button>
           </div>
         </div>
       </section>

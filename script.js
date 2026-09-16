@@ -361,9 +361,32 @@ function isAuthenticated() {
 
 function updateAuthUI() {
   const authenticated = isAuthenticated();
-  document.getElementById("forms-nav").hidden = !authenticated;
+  document.getElementById("internal-menu-button").hidden = !authenticated;
   document.getElementById("login-form").hidden = authenticated;
   document.getElementById("logged-panel").hidden = !authenticated;
+  document.getElementById("account-button").classList.toggle("authenticated", authenticated);
+  document.getElementById("account-button").setAttribute("aria-label", authenticated ? "Conta profissional conectada" : "Entrar na área profissional");
+  document.getElementById("account-popover-title").textContent = authenticated ? "Conta profissional" : "Entrar na OCTN";
+  if (!authenticated) closeHeaderPopover("internal-menu-button", "internal-menu");
+}
+
+function closeHeaderPopover(buttonId, popoverId) {
+  document.getElementById(buttonId)?.setAttribute("aria-expanded", "false");
+  const popover = document.getElementById(popoverId);
+  if (popover) popover.hidden = true;
+}
+
+function toggleHeaderPopover(buttonId, popoverId, otherButtonId, otherPopoverId) {
+  const button = document.getElementById(buttonId);
+  const popover = document.getElementById(popoverId);
+  if (!button || !popover) return;
+  const shouldOpen = popover.hidden;
+  closeHeaderPopover(otherButtonId, otherPopoverId);
+  popover.hidden = !shouldOpen;
+  button.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen && popoverId === "account-popover" && !isAuthenticated()) {
+    window.setTimeout(() => popover.querySelector('input[name="username"]')?.focus(), 0);
+  }
 }
 
 function logout() {
@@ -371,8 +394,40 @@ function logout() {
   updateAuthUI();
   history.pushState(null, "", "#home");
   activateView("home");
-  document.getElementById("acesso")?.scrollIntoView({ behavior: "smooth" });
+  closeHeaderPopover("internal-menu-button", "internal-menu");
+  document.getElementById("account-button")?.focus();
 }
+
+document.getElementById("account-button")?.addEventListener("click", () => {
+  toggleHeaderPopover("account-button", "account-popover", "internal-menu-button", "internal-menu");
+});
+document.getElementById("internal-menu-button")?.addEventListener("click", () => {
+  toggleHeaderPopover("internal-menu-button", "internal-menu", "account-button", "account-popover");
+});
+document.getElementById("open-header-login")?.addEventListener("click", () => {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  const accountPopover = document.getElementById("account-popover");
+  if (accountPopover?.hidden) {
+    toggleHeaderPopover("account-button", "account-popover", "internal-menu-button", "internal-menu");
+  }
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".header-actions")) {
+    closeHeaderPopover("account-button", "account-popover");
+    closeHeaderPopover("internal-menu-button", "internal-menu");
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeHeaderPopover("account-button", "account-popover");
+  closeHeaderPopover("internal-menu-button", "internal-menu");
+});
+
+document.querySelectorAll("#internal-menu [data-view-link]").forEach((button) => {
+  button.addEventListener("click", () => closeHeaderPopover("internal-menu-button", "internal-menu"));
+});
 
 document.getElementById("login-form")?.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -383,6 +438,7 @@ document.getElementById("login-form")?.addEventListener("submit", (event) => {
     message.textContent = "";
     event.currentTarget.reset();
     updateAuthUI();
+    closeHeaderPopover("account-button", "account-popover");
     history.pushState(null, "", "#formularios");
     activateView("formularios");
   } else {
