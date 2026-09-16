@@ -2173,10 +2173,6 @@ footer {
 }
 
 /* Área profissional e formulário ILPI */
-.access-section { background: #eef3ef; }
-.access-card { display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(45px, 8vw, 110px); align-items: center; padding: clamp(42px, 6vw, 72px); border: 1px solid #dce5de; border-radius: 8px; background: #fff; box-shadow: var(--shadow); }
-.access-copy h2 { max-width: 650px; margin: 18px 0; color: var(--navy-900); font: 700 clamp(2rem, 4vw, 3.4rem)/1.1 "Manrope", sans-serif; letter-spacing: -.04em; }
-.access-copy p { max-width: 620px; margin: 0; color: var(--muted); }
 .login-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 28px; border-radius: 6px; background: #182028; }
 .login-form label, .ilpi-form > label, .form-grid > label, .priority-fields label { display: flex; flex-direction: column; gap: 7px; }
 .login-form label span { color: #dfe6e1; font-size: .76rem; font-weight: 700; }
@@ -2189,12 +2185,6 @@ footer {
 .logged-panel strong, .logged-panel small { display: block; }
 .logged-panel small { margin-top: 3px; color: #aeb8bf; }
 .online-dot { width: 11px; height: 11px; border-radius: 50%; background: #67c66e; box-shadow: 0 0 0 6px rgba(103,198,110,.13); }
-.access-header-login { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding: 28px; border-radius: 6px; background: #182028; color: #fff; }
-.access-header-login strong, .access-header-login small { display: block; }
-.access-header-login small { margin-top: 3px; color: #aeb8bf; }
-.access-header-login .button { grid-column: 1 / -1; }
-.access-avatar { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; background: rgba(255,255,255,.1); color: #90d394; }
-.access-avatar svg { width: 22px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .text-button, .back-button { padding: 0; border: 0; background: none; color: var(--green-600); cursor: pointer; font: 700 .82rem "DM Sans", sans-serif; }
 .forms-view { min-height: 70vh; background: #f4f6f7; }
 .forms-hero { padding: 58px 0; background: #182028; color: #fff; }
@@ -2314,7 +2304,7 @@ footer {
 }
 
 @media (max-width: 760px) {
-  .access-card, .form-grid.two, .form-grid.three { grid-template-columns: 1fr; }
+  .form-grid.two, .form-grid.three { grid-template-columns: 1fr; }
   .span-2, .span-3 { grid-column: auto; }
   .forms-hero-inner, .workspace-heading, .saved-heading { align-items: flex-start; flex-direction: column; }
   .workspace-topbar { grid-template-columns: 1fr; }

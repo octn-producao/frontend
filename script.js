@@ -404,14 +404,6 @@ document.getElementById("account-button")?.addEventListener("click", () => {
 document.getElementById("internal-menu-button")?.addEventListener("click", () => {
   toggleHeaderPopover("internal-menu-button", "internal-menu", "account-button", "account-popover");
 });
-document.getElementById("open-header-login")?.addEventListener("click", () => {
-  window.scrollTo({ top: 0, behavior: "smooth" });
-  const accountPopover = document.getElementById("account-popover");
-  if (accountPopover?.hidden) {
-    toggleHeaderPopover("account-button", "account-popover", "internal-menu-button", "internal-menu");
-  }
-});
-
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".header-actions")) {
     closeHeaderPopover("account-button", "account-popover");
