@@ -901,10 +901,20 @@ function reportStatusControl(report) {
   </select>`;
 }
 
+function reportPrintMenu() {
+  return `<div class="report-print-menu">
+    <button type="button" data-print-menu aria-expanded="false">Imprimir</button>
+    <div class="report-print-options" hidden>
+      <button type="button" data-print-complete>Gerar PDF Completo</button>
+      <button type="button" data-print-summary>Gerar PDF Resumido</button>
+    </div>
+  </div>`;
+}
+
 function renderSavedReports() {
   const container = document.getElementById("saved-reports");
   const reports = [...getReports()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions"><button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
+  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions">${reportPrintMenu()}<button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
 }
 
 function updateSaveIndicator(customText) {
@@ -993,12 +1003,47 @@ document.getElementById("save-ilpi")?.addEventListener("click", saveCurrentRepor
 document.querySelectorAll("[data-save]").forEach((button) => button.addEventListener("click", saveCurrentReport));
 ilpiForm?.addEventListener("input", markDirty);
 ilpiForm?.addEventListener("change", markDirty);
+function closeReportPrintMenus(except = null) {
+  document.querySelectorAll(".report-print-menu").forEach((menu) => {
+    if (menu === except) return;
+    menu.querySelector(".report-print-options").hidden = true;
+    menu.querySelector("[data-print-menu]").setAttribute("aria-expanded", "false");
+  });
+}
+
 document.getElementById("saved-reports")?.addEventListener("click", async (event) => {
   const card = event.target.closest("[data-report-id]");
   if (!card) return;
   const reports = getReports();
   const report = reports.find((item) => item.id === card.dataset.reportId);
-  if (event.target.closest("[data-edit-report]")) openReport(report);
+  if (!report) return;
+  const printMenuButton = event.target.closest("[data-print-menu]");
+  if (printMenuButton) {
+    const menu = printMenuButton.closest(".report-print-menu");
+    const options = menu.querySelector(".report-print-options");
+    const shouldOpen = options.hidden;
+    closeReportPrintMenus(menu);
+    options.hidden = !shouldOpen;
+    printMenuButton.setAttribute("aria-expanded", String(shouldOpen));
+    return;
+  }
+  if (event.target.closest("[data-print-complete]")) {
+    closeReportPrintMenus();
+    await printReportRecord(report, false);
+    return;
+  }
+  if (event.target.closest("[data-print-summary]")) {
+    closeReportPrintMenus();
+    await printReportRecord(report, true);
+    return;
+  }
+  if (event.target.closest("[data-edit-report]")) {
+    closeReportPrintMenus();
+    openReport(report);
+  }
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".report-print-menu")) closeReportPrintMenus();
 });
 
 document.getElementById("saved-reports")?.addEventListener("change", async (event) => {
@@ -1237,25 +1282,26 @@ async function waitForReportAssets(container) {
   if (document.fonts?.ready) await document.fonts.ready;
 }
 
+async function printReportRecord(record, summary = false) {
+  if (!record) return;
+  const report = document.getElementById("ilpi-report");
+  report.innerHTML = summary ? buildSummaryReportHtml(record.data) : buildReportHtml(record.data);
+  document.body.classList.add("printing-ilpi");
+  const baseTitle = `${record.data.reportNumber || "Relatório ILPI"} - ${record.data.institutionName || "OCTN"}`;
+  document.title = summary ? `${baseTitle} - Resumo` : baseTitle;
+  await waitForReportAssets(report);
+  window.print();
+}
+
 async function printCurrentReport() {
   const record = saveCurrentReport();
   if (!record) return;
-  const report = document.getElementById("ilpi-report");
-  report.innerHTML = buildReportHtml(record.data);
-  document.body.classList.add("printing-ilpi");
-  document.title = `${record.data.reportNumber || "Relatório ILPI"} - ${record.data.institutionName || "OCTN"}`;
-  await waitForReportAssets(report);
-  window.print();
+  await printReportRecord(record, false);
 }
 async function printSummaryReport() {
   const record = saveCurrentReport();
   if (!record) return;
-  const report = document.getElementById("ilpi-report");
-  report.innerHTML = buildSummaryReportHtml(record.data);
-  document.body.classList.add("printing-ilpi");
-  document.title = (record.data.reportNumber || "Relatório ILPI") + " - Resumo - " + (record.data.institutionName || "OCTN");
-  await waitForReportAssets(report);
-  window.print();
+  await printReportRecord(record, true);
 }
 
 document.getElementById("print-ilpi")?.addEventListener("click", printCurrentReport);
