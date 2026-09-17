@@ -24,8 +24,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=15" />
-    <script src="./script.js?v=16" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=16" />
+    <script src="./script.js?v=17" defer></script>
   </head>
   <body>
     <button class="skip-link" type="button" data-scroll-target="conteudo">Pular para o conteúdo</button>
@@ -725,7 +725,12 @@
           </div>
           <div class="container editor-layout">
             <aside class="form-index" aria-label="Seções do formulário">
-              <strong>Relatório Técnico ILPI</strong><div class="progress-track"><span id="form-progress"></span></div><small id="form-progress-text">0% preenchido</small><nav id="form-section-nav"></nav>
+              <div class="form-index-header">
+                <strong>Relatório Técnico ILPI</strong>
+                <button class="form-index-toggle" id="form-index-toggle" type="button" aria-expanded="true" aria-controls="form-section-nav" aria-label="Recolher índice lateral" title="Recolher índice lateral"><span aria-hidden="true">‹</span></button>
+              </div>
+              <div class="progress-track"><span id="form-progress"></span></div>
+              <small id="form-progress-text">0% preenchido</small><nav id="form-section-nav"></nav>
             </aside>
             <form class="ilpi-form" id="ilpi-form">
               <input type="hidden" name="reportId" />

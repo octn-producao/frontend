@@ -981,10 +981,21 @@ function updateFormInsights() {
 function setupSectionNavigation() {
   const sections = [...ilpiForm.querySelectorAll(".form-section")];
   const navigation = document.getElementById("form-section-nav");
-  navigation.innerHTML = sections.map((section) => `<button type="button" data-section-target="${section.id}">${section.dataset.sectionTitle}</button>`).join("");
+  navigation.innerHTML = sections.map((section, index) => `<button type="button" data-section-target="${section.id}" title="${escapeAttribute(section.dataset.sectionTitle)}" aria-label="${escapeAttribute(section.dataset.sectionTitle)}"><span class="section-nav-number">${index + 1}</span><span class="section-nav-label">${escapeHtml(section.dataset.sectionTitle)}</span></button>`).join("");
   navigation.addEventListener("click", (event) => {
     const button = event.target.closest("[data-section-target]");
     if (button) document.getElementById(button.dataset.sectionTarget)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  const layout = document.querySelector(".editor-layout");
+  const toggle = document.getElementById("form-index-toggle");
+  toggle?.addEventListener("click", () => {
+    const collapsed = layout.classList.toggle("sidebar-collapsed");
+    const label = collapsed ? "Expandir índice lateral" : "Recolher índice lateral";
+    toggle.setAttribute("aria-expanded", String(!collapsed));
+    toggle.setAttribute("aria-label", label);
+    toggle.title = label;
+    toggle.querySelector("span").textContent = collapsed ? "›" : "‹";
   });
 }
 
