@@ -87,7 +87,7 @@
                 <strong id="account-popover-title">Entrar na OCTN</strong>
               </div>
               <form class="login-form header-login-form" id="login-form" autocomplete="on">
-                <label><span>Login</span><input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[-A-Za-z0-9._]+" required /></label>
+                <label><span>Login</span><input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9._\x2D]+" required /></label>
                 <label><span>Senha</span><input type="password" name="password" autocomplete="current-password" minlength="6" maxlength="128" required /></label>
                 <button class="button button-primary" type="submit">Entrar</button>
                 <p class="form-message" id="login-message" role="status" aria-live="polite"></p>
