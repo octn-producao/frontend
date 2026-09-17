@@ -380,7 +380,7 @@ function updateAuthUI() {
   document.getElementById("account-popover-title").textContent = authenticated ? "Conta profissional" : "Entrar na OCTN";
   if (!authenticated) closeHeaderPopover("internal-menu-button", "internal-menu");
   const loggedUser = document.getElementById("logged-user");
-  if (loggedUser) loggedUser.textContent = authenticated ? authState.email : "Menu interno liberado.";
+  if (loggedUser) loggedUser.textContent = authenticated ? authState.username : "Menu interno liberado.";
 }
 
 function closeHeaderPopover(buttonId, popoverId) {
@@ -547,7 +547,6 @@ document.getElementById("login-form")?.addEventListener("submit", async (event) 
   }
 });
 document.getElementById("logout-button")?.addEventListener("click", () => void logout());
-document.querySelectorAll("[data-logout]").forEach((button) => button.addEventListener("click", () => void logout()));
 updateAuthUI();
 void restoreAuthSession();
 
@@ -900,25 +899,11 @@ function formatDateTime(value) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }
 
-function cloudSyncMarkup(report) {
-  const cloudDate = report.cloud?.syncedAt ? formatDateTime(report.cloud.syncedAt) : "";
-  const cloudIsCurrent = Boolean(cloudDate && new Date(report.cloud.syncedAt) >= new Date(report.updatedAt));
-  const state = reportSyncStatus.state;
-  const label = state === "syncing"
-    ? reportSyncStatus.message
-    : state === "error"
-      ? `Falha: ${reportSyncStatus.message}`
-      : cloudIsCurrent
-        ? `Firebase atualizado em ${cloudDate}`
-        : "Salvamento no Firebase pendente";
-  const className = state === "error" ? "error" : state === "syncing" ? "syncing" : cloudIsCurrent ? "success" : "pending";
-  return `<small class="cloud-sync-status ${className}" title="${escapeAttribute(label)}">${escapeHtml(label)}</small>`;
-}
 
 function renderSavedReports() {
   const container = document.getElementById("saved-reports");
   const reports = [...getReports()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small>${cloudSyncMarkup(report)}</div><div class="report-actions"><button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
+  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions"><button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
 }
 
 function updateSaveIndicator(customText) {
