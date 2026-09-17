@@ -338,8 +338,7 @@ function protectedImageUrl(path) {
     ? `${API_BASE_URL}${normalizedPath}`
     : "";
 }
-const authState = { authenticated: false, username: "", email: "", csrfToken: "" };
-const REPORT_OWNER_USERNAME = "grazielle.carvalho";
+const authState = { authenticated: false, username: "", email: "", cargo: "", nome: "", csrfToken: "" };
 let reportSyncPromise = null;
 let reportSyncStatus = { state: "idle", message: "" };
 
@@ -374,6 +373,10 @@ function isAuthenticated() {
   return authState.authenticated;
 }
 
+function isNutritionist() {
+  return isAuthenticated() && authState.cargo === "nutricionista";
+}
+
 const initialView = window.location.hash.slice(1);
 activateView(validViews.has(initialView) ? initialView : "home", false);
 
@@ -387,9 +390,11 @@ function updateAuthUI() {
   document.getElementById("account-popover-title").textContent = authenticated ? "Conta profissional" : "Entrar na OCTN";
   if (!authenticated) closeHeaderPopover("internal-menu-button", "internal-menu");
   const loggedUser = document.getElementById("logged-user");
-  if (loggedUser) loggedUser.textContent = authenticated ? authState.username : "Menu interno liberado.";
+  if (loggedUser) loggedUser.textContent = authenticated
+    ? `${authState.nome || authState.username} · ${authState.cargo || "perfil não informado"}`
+    : "Menu interno liberado.";
   const newReportButton = document.getElementById("new-ilpi");
-  if (newReportButton) newReportButton.hidden = !authenticated || authState.username !== REPORT_OWNER_USERNAME;
+  if (newReportButton) newReportButton.hidden = !isNutritionist();
 }
 
 function closeHeaderPopover(buttonId, popoverId) {
@@ -443,6 +448,8 @@ function applyAuthSession(payload) {
   authState.authenticated = payload.authenticated === true;
   authState.username = payload.user?.username || "";
   authState.email = payload.user?.email || "";
+  authState.cargo = payload.user?.cargo || "";
+  authState.nome = payload.user?.nome || "";
   authState.csrfToken = payload.csrfToken || "";
 }
 
@@ -450,6 +457,8 @@ function clearAuthSession() {
   authState.authenticated = false;
   authState.username = "";
   authState.email = "";
+  authState.cargo = "";
+  authState.nome = "";
   authState.csrfToken = "";
 }
 
@@ -776,7 +785,7 @@ function applySyncedAttachments(reportId, result) {
 }
 
 async function syncOwnedReport(reportRecord = null) {
-  if (authState.username !== REPORT_OWNER_USERNAME || !authState.csrfToken) return null;
+  if (!isNutritionist() || !authState.csrfToken) return null;
   if (reportSyncPromise) return reportSyncPromise;
 
   const localReport = reportRecord || getReports().find((report) => report.id === currentReportId);
@@ -864,12 +873,13 @@ function defaultNewReportData() {
 }
 
 function openReport(report = null) {
-  if (report?.readOnly || (!report && authState.username !== REPORT_OWNER_USERNAME)) return;
+  if (report?.readOnly || (!report && !isNutritionist())) return;
   currentReportId = report?.id || crypto.randomUUID?.() || `ilpi-${Date.now()}`;
   const data = report?.data || defaultNewReportData();
   ilpiForm.reset();
   renderFixedRows(data);
   setFormValues(data);
+  ilpiForm.elements.clientLoginsText.value = (report?.clientLogins || []).join(", ");
   document.getElementById("resident-rows").innerHTML = "";
   (data.residents?.length ? data.residents : [{}, {}, {}, {}]).forEach(addResidentRow);
   document.getElementById("action-rows").innerHTML = "";
@@ -889,8 +899,13 @@ function openReport(report = null) {
 }
 
 function saveCurrentReport() {
-  if (!ilpiForm || !isAuthenticated() || authState.username !== REPORT_OWNER_USERNAME) return;
+  if (!ilpiForm || !isNutritionist()) return;
   const data = collectFormData();
+  delete data.clientLoginsText;
+  const clientLogins = [...new Set(String(ilpiForm.elements.clientLoginsText.value || "")
+    .split(",")
+    .map((login) => login.trim().toLowerCase())
+    .filter(Boolean))];
   const reports = getReports();
   const index = reports.findIndex((report) => report.id === currentReportId);
   const now = new Date().toISOString();
@@ -903,6 +918,7 @@ function saveCurrentReport() {
     id: currentReportId,
     createdAt: index >= 0 ? reports[index].createdAt : now,
     updatedAt: now,
+    clientLogins,
     data,
   };
   if (index >= 0) reports[index] = record; else reports.unshift(record);
@@ -934,8 +950,8 @@ function reportStatusControl(report) {
   </select>`;
 }
 
-function reportModelBadge() {
-  return '<span class="report-model-badge">Somente leitura</span>';
+function readOnlyBadge(label = "Somente leitura") {
+  return `<span class="report-model-badge">${escapeHtml(label)}</span>`;
 }
 
 function reportPrintMenu() {
@@ -952,15 +968,18 @@ function renderSavedReports() {
   const container = document.getElementById("saved-reports");
   const reports = [...getReports()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   container.innerHTML = reports.length ? reports.map((report) => {
-    const isModel = report.readOnly === true || report.isModel === true;
+    const isModel = report.isModel === true;
+    const isReadOnly = report.readOnly === true;
     const name = isModel ? (report.title || "Relatório Modelo") : (report.data.institutionName || "Instituição não informada");
     const dateColumn = isModel
       ? '<div><strong>Versões completa e resumida</strong><small>Modelo demonstrativo</small></div>'
       : `<div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div>`;
     const statusColumn = isModel
-      ? `<div>${reportModelBadge()}<small>Não permite edição ou exclusão</small></div>`
-      : `<div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div>`;
-    const editButton = isModel ? "" : '<button type="button" data-edit-report>Editar</button>';
+      ? `<div>${readOnlyBadge()}<small>Não permite edição ou exclusão</small></div>`
+      : isReadOnly
+        ? `<div>${readOnlyBadge("Compartilhado com você")}<small>Visualização e impressão</small></div>`
+        : `<div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div>`;
+    const editButton = isReadOnly ? "" : '<button type="button" data-edit-report>Editar</button>';
     return `<article class="saved-report${isModel ? " model-report" : ""}" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(name)}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div>${dateColumn}${statusColumn}<div class="report-actions">${reportPrintMenu()}${editButton}</div></article>`;
   }).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
 }

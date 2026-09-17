@@ -16,13 +16,14 @@ Depois, acesse `http://localhost:8080`.
 ## Área profissional
 
 - O login é autenticado pelo backend em `https://backend-a3kp.onrender.com`.
-- O identificador `grazielle.carvalho` é convertido pelo backend em
-  `grazielle.carvalho@octn.com.br` antes da autenticação.
+- Cada identificador é convertido pelo backend em `<login>@octn.com.br` antes
+  da autenticação e precisa possuir um perfil ativo na coleção `logins`.
 - Nenhum token de autenticação é salvo no JavaScript, `localStorage` ou `sessionStorage`.
 - A sessão usa cookie seguro e `HttpOnly`, validado pelo backend.
-- Os relatórios são carregados exclusivamente do armazenamento remoto protegido
-  após a autenticação da proprietária; o frontend não mantém cópia em
-  `localStorage`.
+- Nutricionistas editam apenas os próprios relatórios. Clientes visualizam e
+  imprimem somente os relatórios associados ao seu login.
+- Os relatórios são carregados exclusivamente do armazenamento remoto protegido;
+  o frontend não mantém cópia em `localStorage`.
 - Fotografias anexadas são processadas pelo backend; credenciais de serviços
   externos nunca são incluídas no frontend.
 - PDFs e planilhas são relacionados apenas pelo nome no índice de anexos.
