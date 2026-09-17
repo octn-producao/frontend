@@ -24,8 +24,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=13" />
-    <script src="./script.js?v=14" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=14" />
+    <script src="./script.js?v=15" defer></script>
   </head>
   <body>
     <button class="skip-link" type="button" data-scroll-target="conteudo">Pular para o conteúdo</button>
@@ -694,7 +694,7 @@
             <div>
               <span class="section-kicker">Área profissional protegida</span>
               <h1>Formulários e relatórios técnicos</h1>
-              <p>Preencha em campo, salve no Firebase e emita documentos padronizados com a identidade OCTN.</p>
+              <p>Preencha em campo, salve com segurança e emita documentos padronizados com a identidade OCTN.</p>
             </div>
           </div>
         </section>
@@ -712,7 +712,7 @@
               </div>
               <button class="button button-primary" type="button" id="new-ilpi">Novo diagnóstico</button>
             </article>
-            <div class="saved-heading"><div><span>Firebase privado</span><h2>Relatórios da conta</h2></div><small>Relatórios associados ao login autenticado.</small></div>
+            <div class="saved-heading"><div><h2>Relatórios da conta</h2></div></div>
             <div class="saved-reports" id="saved-reports"></div>
           </div>
         </section>
@@ -733,7 +733,7 @@
                 <div class="form-section-heading"><span>Documento</span><h2>Controle e apresentação</h2><p>Informações usadas na capa e no controle do relatório.</p></div>
                 <div class="form-grid three">
                   <label><span>Número do relatório</span><input name="reportNumber" placeholder="RTC_ILPI-2026/A001" /></label>
-                  <label><span>Status do relatório</span><select name="status"><option>Em elaboração</option><option>Concluído</option></select></label>
+                  <label><span>Status do relatório</span><select name="status"><option>Em Elaboração</option><option>Concluído</option></select></label>
 
                   <label class="span-2"><span>Título complementar</span><input name="subtitle" placeholder="Diagnóstico inicial do serviço de alimentação e nutrição" /></label>
                   <label><span>Local de emissão</span><input name="issueCity" placeholder="Salvador/BA" /></label>
@@ -849,7 +849,7 @@
               <section class="form-section" id="section-anexos" data-section-title="Anexos">
                 <div class="form-section-heading with-action"><div><span>Evidências complementares</span><h2>Anexos do relatório</h2><p>Área reservada para fotografias autorizadas, instrumentos de mapeamento, documentos consultados e outros registros. Imagens serão incorporadas ao PDF; outros arquivos serão relacionados pelo nome.</p></div><button class="small-button" type="button" id="add-annex">+ Adicionar anexo</button></div>
                 <div class="annex-list" id="annex-rows"></div>
-                <p class="storage-guidance">O relatório é salvo no Firebase privado; imagens são hospedadas no ImgBB e vinculadas ao documento. Evite exposição desnecessária de residentes.</p>
+                <p class="storage-guidance">Os anexos são vinculados ao relatório. Evite exposição desnecessária de residentes e utilize somente imagens autorizadas.</p>
               </section>
 
               <section class="form-section final-review" id="section-revisao" data-section-title="Revisão final">

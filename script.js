@@ -322,7 +322,7 @@ if ("IntersectionObserver" in window) {
   animatedElements.forEach((element) => element.classList.add("visible"));
 }
 
-// Área profissional e relatórios privados armazenados no Firebase.
+// Área profissional e relatórios privados.
 const LEGACY_ILPI_STORAGE_KEY = "octn.ilpi.reports.v1";
 localStorage.removeItem(LEGACY_ILPI_STORAGE_KEY);
 let reportsState = [];
@@ -658,27 +658,26 @@ async function loadOwnedReports() {
     return;
   }
 
-  reportSyncStatus = { state: "syncing", message: "Carregando relatórios do Firebase..." };
+  reportSyncStatus = { state: "syncing", message: "Carregando relatórios..." };
   renderSavedReports();
   try {
     const result = await authRequest("/api/reports");
     reportsState = (result.reports || []).map((report) => ({
       ...report,
-      cloud: {
-        owner: REPORT_OWNER_USERNAME,
-        firestorePath: `relatorios/${REPORT_OWNER_USERNAME}/itens/${report.id}`,
-        syncedAt: report.syncedAt || report.updatedAt || "",
+      data: {
+        ...report.data,
+        status: report.data?.status === "Concluído" ? "Concluído" : "Em Elaboração",
       },
     }));
-    reportSyncStatus = { state: "success", message: "Relatórios carregados do Firebase" };
+    reportSyncStatus = { state: "success", message: "Relatórios carregados" };
   } catch (error) {
     reportsState = [];
-    reportSyncStatus = { state: "error", message: error.message || "Falha ao carregar do Firebase" };
+    reportSyncStatus = { state: "error", message: error.message || "Falha ao carregar os relatórios" };
     if (error.status === 401) {
       clearAuthSession();
       updateAuthUI();
     }
-    console.error("Não foi possível carregar os relatórios do Firebase.", error);
+    console.error("Não foi possível carregar os relatórios.", error);
   } finally {
     localStorage.removeItem(LEGACY_ILPI_STORAGE_KEY);
     renderSavedReports();
@@ -697,7 +696,7 @@ function blobToDataUrl(blob) {
 async function prepareAnnexForSync(annex) {
   const prepared = { ...annex };
   const source = String(prepared.dataUrl || "");
-  if (!source || source.startsWith("data:image/") || source.startsWith("https://i.ibb.co/")) {
+  if (!source || source.startsWith("data:image/") || source.startsWith("https://")) {
     return prepared;
   }
 
@@ -734,14 +733,9 @@ function applySyncedAttachments(reportId, result) {
     if (!annex) continue;
     annex.dataUrl = attachment.url;
     annex.imageUrl = attachment.url;
-    annex.imageStorage = "imgbb";
+    annex.imageStorage = "remote";
   }
 
-  report.cloud = {
-    owner: REPORT_OWNER_USERNAME,
-    firestorePath: result.firestorePath,
-    syncedAt: result.syncedAt,
-  };
   persistReports(reports);
 
   if (currentReportId === reportId) {
@@ -762,11 +756,11 @@ async function syncOwnedReport(reportRecord = null) {
 
   const localReport = reportRecord || getReports().find((report) => report.id === currentReportId);
   if (!localReport) return null;
-  reportSyncStatus = { state: "syncing", message: "Salvando relatório no Firebase..." };
+  reportSyncStatus = { state: "syncing", message: "Salvando relatório..." };
 
   reportSyncPromise = (async () => {
     renderSavedReports();
-    if (currentReportId === localReport.id) updateSaveIndicator("Salvando no Firebase...");
+    if (currentReportId === localReport.id) updateSaveIndicator("Salvando relatório...");
 
     try {
       const preparedReport = await prepareReportForSync(localReport);
@@ -776,17 +770,17 @@ async function syncOwnedReport(reportRecord = null) {
         body: JSON.stringify({ report: preparedReport }),
       });
       applySyncedAttachments(localReport.id, result);
-      reportSyncStatus = { state: "success", message: "Relatório salvo no Firebase" };
-      if (currentReportId === localReport.id) updateSaveIndicator("Salvo no Firebase");
+      reportSyncStatus = { state: "success", message: "Relatório salvo" };
+      if (currentReportId === localReport.id) updateSaveIndicator("Relatório salvo");
       return result;
     } catch (error) {
-      console.error("Não foi possível salvar o relatório no Firebase.", error);
-      reportSyncStatus = { state: "error", message: error.message || "Falha ao salvar no Firebase" };
+      console.error("Não foi possível salvar o relatório.", error);
+      reportSyncStatus = { state: "error", message: error.message || "Falha ao salvar o relatório" };
       if (error.status === 401) {
         clearAuthSession();
         updateAuthUI();
       }
-      if (currentReportId === localReport.id) updateSaveIndicator("Não salvo no Firebase · tente novamente");
+      if (currentReportId === localReport.id) updateSaveIndicator("Não foi possível salvar · tente novamente");
       return null;
     } finally {
       reportSyncPromise = null;
@@ -834,7 +828,7 @@ function setFormValues(data) {
 function defaultNewReportData() {
   const reports = getReports();
   const number = String(reports.length + 1).padStart(3, "0");
-  return { reportNumber: `RTC_ILPI-${new Date().getFullYear()}/A${number}`, version: "1.0", status: "Em elaboração", subtitle: "Diagnóstico institucional, nutricional e do serviço de alimentação", issueCity: "Salvador/BA", nutritionist: "Grazielle Matos", crn: "17272", residents: [], actions: [], findings: [], annexes: [] };
+  return { reportNumber: `RTC_ILPI-${new Date().getFullYear()}/A${number}`, version: "1.0", status: "Em Elaboração", subtitle: "Diagnóstico institucional, nutricional e do serviço de alimentação", issueCity: "Salvador/BA", nutritionist: "Grazielle Matos", crn: "17272", residents: [], actions: [], findings: [], annexes: [] };
 }
 
 function openReport(report = null) {
@@ -877,12 +871,11 @@ function saveCurrentReport() {
     createdAt: index >= 0 ? reports[index].createdAt : now,
     updatedAt: now,
     data,
-    ...(index >= 0 && reports[index].cloud ? { cloud: reports[index].cloud } : {}),
   };
   if (index >= 0) reports[index] = record; else reports.unshift(record);
   persistReports(reports);
   formIsDirty = false;
-  updateSaveIndicator("Salvando no Firebase...");
+  updateSaveIndicator("Salvando relatório...");
   document.getElementById("current-report-label").textContent = data.institutionName || "Novo diagnóstico";
   renderSavedReports();
   void syncOwnedReport(record);
@@ -900,10 +893,18 @@ function formatDateTime(value) {
 }
 
 
+function reportStatusControl(report) {
+  const status = report.data.status === "Concluído" ? "Concluído" : "Em Elaboração";
+  return `<select class="report-status-select" data-report-status aria-label="Alterar status do relatório">
+    <option value="Em Elaboração" ${status === "Em Elaboração" ? "selected" : ""}>Em Elaboração</option>
+    <option value="Concluído" ${status === "Concluído" ? "selected" : ""}>Concluído</option>
+  </select>`;
+}
+
 function renderSavedReports() {
   const container = document.getElementById("saved-reports");
   const reports = [...getReports()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div><span class="status-pill">${escapeHtml(report.data.status || "Em elaboração")}</span><small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions"><button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
+  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions"><button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
 }
 
 function updateSaveIndicator(customText) {
@@ -998,6 +999,28 @@ document.getElementById("saved-reports")?.addEventListener("click", async (event
   const reports = getReports();
   const report = reports.find((item) => item.id === card.dataset.reportId);
   if (event.target.closest("[data-edit-report]")) openReport(report);
+});
+
+document.getElementById("saved-reports")?.addEventListener("change", async (event) => {
+  const select = event.target.closest("[data-report-status]");
+  const card = event.target.closest("[data-report-id]");
+  if (!select || !card) return;
+  const reports = getReports();
+  const report = reports.find((item) => item.id === card.dataset.reportId);
+  if (!report) return;
+
+  report.data.status = select.value;
+  report.updatedAt = new Date().toISOString();
+  persistReports(reports);
+  if (currentReportId === report.id && ilpiForm.elements.status) {
+    ilpiForm.elements.status.value = select.value;
+  }
+  renderSavedReports();
+  const result = await syncOwnedReport(report);
+  if (!result) {
+    alert("Não foi possível salvar o novo status. Tente novamente.");
+    await loadOwnedReports();
+  }
 });
 
 localStorage.removeItem(LEGACY_ILPI_STORAGE_KEY);
