@@ -331,6 +331,13 @@ const API_BASE_URL = (
   configuredApiUrl ||
   (["localhost", "127.0.0.1"].includes(window.location.hostname) ? "http://localhost:3000" : "")
 ).replace(/\/$/, "");
+
+function protectedImageUrl(path) {
+  const normalizedPath = String(path || "");
+  return normalizedPath.startsWith("/api/reports/") && API_BASE_URL
+    ? `${API_BASE_URL}${normalizedPath}`
+    : "";
+}
 const authState = { authenticated: false, username: "", email: "", csrfToken: "" };
 const REPORT_OWNER_USERNAME = "grazielle.carvalho";
 let reportSyncPromise = null;
@@ -617,9 +624,11 @@ function compressAnnexImage(file) {
 function addAnnexRow(annex = {}) {
   const item = document.createElement("article");
   item.className = "annex-editor-item";
-  item.dataset.fileData = annex.dataUrl || "";
+  item.dataset.fileData = annex.dataUrl || protectedImageUrl(annex.imagePath);
   item.dataset.fileName = annex.fileName || "";
   item.dataset.fileType = annex.fileType || "";
+  item.dataset.imageRef = annex.imageRef || "";
+  item.dataset.imagePath = annex.imagePath || "";
   item.innerHTML = `<div class="annex-editor-grid"><label><span>Tipo de anexo</span>${selectInput("type", ["Registro fotográfico", "Instrumento de mapeamento", "Documento consultado", "Planilha / indicador", "Outro"], annex.type || "Registro fotográfico")}</label><label><span>Título / identificação</span>${textInput("title", annex.title)}</label><label><span>Data do registro</span>${textInput("date", annex.date, "date")}</label><label><span>Código / referência</span>${textInput("code", annex.code)}</label><label class="span-2"><span>Descrição e relação com o achado</span><textarea data-field="description" rows="3">${escapeHtml(annex.description || "")}</textarea></label><label class="annex-file"><span>Arquivo</span><input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" /><small data-file-label>${escapeHtml(annex.fileName || "Nenhum arquivo selecionado")}</small></label></div><div class="annex-preview" ${annex.dataUrl ? "" : "hidden"}><img alt="Prévia do anexo" /></div><button class="remove-row annex-remove" type="button" aria-label="Remover anexo">×</button>`;
   const preview = item.querySelector(".annex-preview");
   if (annex.dataUrl) preview.querySelector("img").src = annex.dataUrl;
@@ -628,6 +637,8 @@ function addAnnexRow(annex = {}) {
     if (!file) return;
     item.dataset.fileName = file.name;
     item.dataset.fileType = file.type;
+    item.dataset.imageRef = "";
+    item.dataset.imagePath = "";
     item.querySelector("[data-file-label]").textContent = file.name;
     if (file.type.startsWith("image/")) {
       item.dataset.fileData = await compressAnnexImage(file);
@@ -666,6 +677,10 @@ async function loadOwnedReports() {
       ...report,
       data: {
         ...report.data,
+        annexes: (report.data?.annexes || []).map((annex) => ({
+          ...annex,
+          dataUrl: annex.imagePath ? protectedImageUrl(annex.imagePath) : annex.dataUrl,
+        })),
         status: report.data?.status === "Concluído" ? "Concluído" : "Em Elaboração",
       },
     }));
@@ -695,6 +710,10 @@ function blobToDataUrl(blob) {
 
 async function prepareAnnexForSync(annex) {
   const prepared = { ...annex };
+  if (prepared.imageRef && prepared.imagePath) {
+    prepared.dataUrl = "";
+    return prepared;
+  }
   const source = String(prepared.dataUrl || "");
   if (!source || source.startsWith("data:image/") || source.startsWith("https://")) {
     return prepared;
@@ -731,9 +750,11 @@ function applySyncedAttachments(reportId, result) {
   for (const attachment of result.attachments || []) {
     const annex = report.data.annexes?.[attachment.index];
     if (!annex) continue;
-    annex.dataUrl = attachment.url;
-    annex.imageUrl = attachment.url;
-    annex.imageStorage = "remote";
+    annex.imageRef = attachment.imageRef;
+    annex.imagePath = attachment.imagePath;
+    annex.dataUrl = protectedImageUrl(attachment.imagePath);
+    delete annex.imageUrl;
+    annex.imageStorage = "imgbb-protected";
   }
 
   persistReports(reports);
@@ -742,10 +763,12 @@ function applySyncedAttachments(reportId, result) {
     document.querySelectorAll("#annex-rows .annex-editor-item").forEach((item, index) => {
       const attachment = (result.attachments || []).find((entry) => entry.index === index);
       if (!attachment) return;
-      item.dataset.fileData = attachment.url;
+      item.dataset.imageRef = attachment.imageRef;
+      item.dataset.imagePath = attachment.imagePath;
+      item.dataset.fileData = protectedImageUrl(attachment.imagePath);
       const preview = item.querySelector(".annex-preview");
       preview.hidden = false;
-      preview.querySelector("img").src = attachment.url;
+      preview.querySelector("img").src = item.dataset.fileData;
     });
   }
 }
@@ -798,7 +821,14 @@ function collectDynamicRows(containerId) {
     .map((item, index) => {
       if (containerId !== "annex-rows") return item;
       const row = document.querySelectorAll("#annex-rows .annex-editor-item")[index];
-      return { ...item, fileName: row.dataset.fileName || "", fileType: row.dataset.fileType || "", dataUrl: row.dataset.fileData || "" };
+      return {
+        ...item,
+        fileName: row.dataset.fileName || "",
+        fileType: row.dataset.fileType || "",
+        dataUrl: row.dataset.fileData || "",
+        imageRef: row.dataset.imageRef || "",
+        imagePath: row.dataset.imagePath || "",
+      };
     })
     .filter((item) => containerId === "action-rows" ? item.action?.trim() : containerId === "finding-rows" ? item.finding?.trim() : containerId === "annex-rows" ? [item.title, item.description, item.fileName].some((value) => value?.trim()) : [item.name, item.birthDate, item.diagnosis].some((value) => value?.trim()));
 }
