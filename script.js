@@ -388,6 +388,8 @@ function updateAuthUI() {
   if (!authenticated) closeHeaderPopover("internal-menu-button", "internal-menu");
   const loggedUser = document.getElementById("logged-user");
   if (loggedUser) loggedUser.textContent = authenticated ? authState.username : "Menu interno liberado.";
+  const newReportButton = document.getElementById("new-ilpi");
+  if (newReportButton) newReportButton.hidden = !authenticated || authState.username !== REPORT_OWNER_USERNAME;
 }
 
 function closeHeaderPopover(buttonId, popoverId) {
@@ -462,7 +464,7 @@ async function restoreAuthSession() {
   if (isAuthenticated() && window.location.hash === "#formularios") {
     activateView("formularios", false);
   }
-  if (isAuthenticated()) await loadOwnedReports();
+  if (isAuthenticated()) await loadReports();
   else renderSavedReports();
 }
 
@@ -538,7 +540,7 @@ document.getElementById("login-form")?.addEventListener("submit", async (event) 
     closeHeaderPopover("account-button", "account-popover");
     history.pushState(null, "", "#formularios");
     activateView("formularios");
-    await loadOwnedReports();
+    await loadReports();
   } catch (error) {
     clearAuthSession();
     updateAuthUI();
@@ -662,8 +664,8 @@ function persistReports(reports) {
   reportsState = reports;
 }
 
-async function loadOwnedReports() {
-  if (!isAuthenticated() || authState.username !== REPORT_OWNER_USERNAME) {
+async function loadReports() {
+  if (!isAuthenticated()) {
     reportsState = [];
     renderSavedReports();
     return;
@@ -856,12 +858,13 @@ function setFormValues(data) {
 }
 
 function defaultNewReportData() {
-  const reports = getReports();
+  const reports = getReports().filter((report) => !report.readOnly);
   const number = String(reports.length + 1).padStart(3, "0");
   return { reportNumber: `RTC_ILPI-${new Date().getFullYear()}/A${number}`, version: "1.0", status: "Em Elaboração", subtitle: "Diagnóstico institucional, nutricional e do serviço de alimentação", issueCity: "Salvador/BA", nutritionist: "Grazielle Matos", crn: "17272", residents: [], actions: [], findings: [], annexes: [] };
 }
 
 function openReport(report = null) {
+  if (report?.readOnly || (!report && authState.username !== REPORT_OWNER_USERNAME)) return;
   currentReportId = report?.id || crypto.randomUUID?.() || `ilpi-${Date.now()}`;
   const data = report?.data || defaultNewReportData();
   ilpiForm.reset();
@@ -886,7 +889,7 @@ function openReport(report = null) {
 }
 
 function saveCurrentReport() {
-  if (!ilpiForm || !isAuthenticated()) return;
+  if (!ilpiForm || !isAuthenticated() || authState.username !== REPORT_OWNER_USERNAME) return;
   const data = collectFormData();
   const reports = getReports();
   const index = reports.findIndex((report) => report.id === currentReportId);
@@ -931,6 +934,10 @@ function reportStatusControl(report) {
   </select>`;
 }
 
+function reportModelBadge() {
+  return '<span class="report-model-badge">Somente leitura</span>';
+}
+
 function reportPrintMenu() {
   return `<div class="report-print-menu">
     <button type="button" data-print-menu aria-expanded="false">Imprimir</button>
@@ -944,7 +951,18 @@ function reportPrintMenu() {
 function renderSavedReports() {
   const container = document.getElementById("saved-reports");
   const reports = [...getReports()].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  container.innerHTML = reports.length ? reports.map((report) => `<article class="saved-report" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(report.data.institutionName || "Instituição não informada")}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div><div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div><div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div><div class="report-actions">${reportPrintMenu()}<button type="button" data-edit-report>Editar</button></div></article>`).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
+  container.innerHTML = reports.length ? reports.map((report) => {
+    const isModel = report.readOnly === true || report.isModel === true;
+    const name = isModel ? (report.title || "Relatório Modelo") : (report.data.institutionName || "Instituição não informada");
+    const dateColumn = isModel
+      ? '<div><strong>Versões completa e resumida</strong><small>Modelo demonstrativo</small></div>'
+      : `<div><strong>${formatDate(report.data.visitDate)}</strong><small>Data da visita</small></div>`;
+    const statusColumn = isModel
+      ? `<div>${reportModelBadge()}<small>Não permite edição ou exclusão</small></div>`
+      : `<div>${reportStatusControl(report)}<small>Atualizado ${formatDateTime(report.updatedAt)}</small></div>`;
+    const editButton = isModel ? "" : '<button type="button" data-edit-report>Editar</button>';
+    return `<article class="saved-report${isModel ? " model-report" : ""}" data-report-id="${escapeAttribute(report.id)}"><div><strong>${escapeHtml(name)}</strong><span>${escapeHtml(report.data.reportNumber || "Sem número")}</span></div>${dateColumn}${statusColumn}<div class="report-actions">${reportPrintMenu()}${editButton}</div></article>`;
+  }).join("") : '<div class="empty-reports">Nenhum relatório disponível.</div>';
 }
 
 function updateSaveIndicator(customText) {
@@ -1079,6 +1097,7 @@ document.getElementById("saved-reports")?.addEventListener("click", async (event
     return;
   }
   if (event.target.closest("[data-edit-report]")) {
+    if (report.readOnly || report.isModel) return;
     closeReportPrintMenus();
     openReport(report);
   }
@@ -1093,7 +1112,7 @@ document.getElementById("saved-reports")?.addEventListener("change", async (even
   if (!select || !card) return;
   const reports = getReports();
   const report = reports.find((item) => item.id === card.dataset.reportId);
-  if (!report) return;
+  if (!report || report.readOnly || report.isModel) return;
 
   report.data.status = select.value;
   report.updatedAt = new Date().toISOString();
@@ -1105,7 +1124,7 @@ document.getElementById("saved-reports")?.addEventListener("change", async (even
   const result = await syncOwnedReport(report);
   if (!result) {
     alert("Não foi possível salvar o novo status. Tente novamente.");
-    await loadOwnedReports();
+    await loadReports();
   }
 });
 
@@ -1132,7 +1151,8 @@ function reportHeader(data) {
 }
 
 function reportFooter(data, page, total) {
-  return `<footer class="report-page-footer"><span>${shown(data.nutritionist, "Nutricionista consultora")} · Documento técnico confidencial</span><span>${shown(data.institutionName, "ILPI")} · Página __OCTN_PAGE__ de __OCTN_TOTAL__</span></footer>`;
+  const documentLabel = data.isModel ? "Modelo demonstrativo" : "Documento técnico confidencial";
+  return `<footer class="report-page-footer"><span>${shown(data.nutritionist, "Nutricionista consultora")} · ${documentLabel}</span><span>${shown(data.institutionName, "ILPI")} · Página __OCTN_PAGE__ de __OCTN_TOTAL__</span></footer>`;
 }
 
 function reportPage(data, kicker, title, content, page, total, className = "") {
@@ -1167,7 +1187,7 @@ function buildReportHtml(data) {
   const diabetes = Number(data.health0Count || 0);
   const hypertension = Number(data.health1Count || 0);
   const weightLoss = Number(data.health4Count || 0);
-  const executiveSummary = `A visita técnica realizada em ${formatDate(data.visitDate)} registrou uma instituição com ${shown(data.totalResidents, "quantitativo não informado")} residentes, sendo ${shown(data.bedriddenResidents, "quantitativo não informado")} acamado(s), e ${shown(data.foodEmployees, "quantitativo não informado")} profissional(is) envolvido(s) na alimentação. Foram informados ${diabetes} caso(s) de diabetes mellitus, ${hypertension} de hipertensão arterial e ${weightLoss} de perda de peso recente. A instituição relatou oferta de ${shown(data.mealsPerDay, "quantitativo não informado")} refeições diárias. A existência de cardápio planejado foi registrada como “${shown(data.plannedMenu)}”. Os principais achados e as orientações correspondentes estão consolidados nas seções seguintes.`;
+  const executiveSummary = data.executiveSummaryOverride || `A visita técnica realizada em ${formatDate(data.visitDate)} registrou uma instituição com ${shown(data.totalResidents, "quantitativo não informado")} residentes, sendo ${shown(data.bedriddenResidents, "quantitativo não informado")} acamado(s), e ${shown(data.foodEmployees, "quantitativo não informado")} profissional(is) envolvido(s) na alimentação. Foram informados ${diabetes} caso(s) de diabetes mellitus, ${hypertension} de hipertensão arterial e ${weightLoss} de perda de peso recente. A instituição relatou oferta de ${shown(data.mealsPerDay, "quantitativo não informado")} refeições diárias. A existência de cardápio planejado foi registrada como “${shown(data.plannedMenu)}”. Os principais achados e as orientações correspondentes estão consolidados nas seções seguintes.`;
 
   const cover = `<section class="report-page report-cover"><div class="report-cover-brand"><img src="./public/imagens_pub/logo_grazielle_matos.jpeg" alt="Grazielle Matos — Nutricionista" /><span>Consultoria Técnica Nutricional</span></div><div class="report-cover-title"><span class="report-type">Relatório técnico</span><h1>Diagnóstico Institucional e Nutricional — ILPI</h1><p>${shown(data.subtitle, "Avaliação do serviço de alimentação, do perfil assistencial e das prioridades nutricionais")}</p><table class="cover-client"><tr><td>Contratante</td><td>${shown(data.institutionName)}</td></tr><tr><td>Solicitante</td><td>${shown(data.requestedBy || data.institutionManager)}</td></tr><tr><td>Data da visita</td><td>${formatDate(data.visitDate)}</td></tr><tr><td>Nutricionista consultora</td><td>${shown(data.nutritionist)} · CRN ${shown(data.crn)}</td></tr></table></div><div class="cover-footer"><span>${shown(data.issueCity, "Brasil")} · ${new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(new Date())}</span><span>${shown(data.reportNumber, "Relatório técnico ILPI")}</span><span>Página 1 de __OCTN_TOTAL__</span></div></section>`;
 
@@ -1252,7 +1272,7 @@ function buildSummaryReportHtml(data) {
   const actions = [...(data.actions || [])]
     .filter((action) => action.action)
     .sort((a, b) => (priorityOrder[a.priority] ?? 9) - (priorityOrder[b.priority] ?? 9));
-  const immediateActions = actions.filter((action) => action.priority === "Imediata").slice(0, 6);
+  const immediateActions = (data.isModel ? actions : actions.filter((action) => action.priority === "Imediata")).slice(0, 6);
   const highCount = findings.filter((finding) => finding.priority === "Alta").length;
   const mealCount = Number(data.mealsPerDay || 0);
 
@@ -1263,7 +1283,7 @@ function buildSummaryReportHtml(data) {
   const mealAlert = mealCount > 0 && mealCount < 6
     ? '<div class="summary-noncompliance"><strong>NÃO CONFORME · OFERTA DIÁRIA DE REFEIÇÕES</strong><p>A instituição informou ' + shown(data.mealsPerDay) + ' refeições diárias. O art. 44 da RDC Anvisa nº 502/2021 estabelece a oferta mínima de seis refeições por dia. O art. 45 da mesma resolução determina a observância das Boas Práticas aplicáveis à manipulação, preparação, armazenamento e distribuição dos alimentos, em conformidade com a RDC Anvisa nº 216/2004.</p></div>'
     : "";
-  const narrative =
+  const narrative = data.summaryNarrativeOverride ||
     'A visita técnica realizada em ' + formatDate(data.visitDate) +
     ' caracterizou a instituição com ' + shown(data.totalResidents, "quantitativo não informado") +
     ' residentes, sendo ' + shown(data.independentResidents, "—") + ' independentes, ' +
@@ -1289,11 +1309,11 @@ function buildSummaryReportHtml(data) {
       '<div><span>Residentes</span><strong>' + shown(data.totalResidents, "—") + '</strong></div>' +
       '<div><span>Acamados</span><strong>' + shown(data.bedriddenResidents, "—") + '</strong></div>' +
       '<div><span>Perda de peso</span><strong>' + shown(data.health4Count, "—") + '</strong></div>' +
-      '<div><span>Prioridade imediata</span><strong>' + immediateActions.length + '</strong></div>' +
+      '<div><span>' + (data.isModel ? 'Ações do modelo' : 'Prioridade imediata') + '</span><strong>' + immediateActions.length + '</strong></div>' +
       '<div><span>Prioridade alta</span><strong>' + highCount + '</strong></div>' +
     '</div>' +
     mealAlert +
-    '<section class="summary-immediate-priority"><header><strong>PRIORIDADE IMEDIATA · ' + shown(data.institutionName, "Instituição") + '</strong><span>Medidas que não devem aguardar</span></header><ol>' +
+    '<section class="summary-immediate-priority"><header><strong>' + (data.isModel ? 'AÇÕES EXEMPLIFICATIVAS · ' : 'PRIORIDADE IMEDIATA · ') + shown(data.institutionName, "Instituição") + '</strong><span>' + (data.isModel ? 'Estrutura demonstrativa do plano de ação' : 'Medidas que não devem aguardar') + '</span></header><ol>' +
       (immediateItems || '<li><strong>Nenhuma ação imediata registrada.</strong></li>') +
     '</ol></section>' +
     '<p class="summary-reference"><strong>Bases principais:</strong> RDC Anvisa nº 502/2021; RDC Anvisa nº 216/2004; Lei nº 8.234/1991; Lei nº 10.741/2003; Resolução CFN nº 600/2018. Os demais achados, evidências e orientações constam no PDF completo.</p>' +
@@ -1326,7 +1346,15 @@ async function waitForReportAssets(container) {
 async function printReportRecord(record, summary = false) {
   if (!record) return;
   const report = document.getElementById("ilpi-report");
-  report.innerHTML = summary ? buildSummaryReportHtml(record.data) : buildReportHtml(record.data);
+  let reportHtml = summary ? buildSummaryReportHtml(record.data) : buildReportHtml(record.data);
+  if (record.data.isModel) {
+    const notice = `<p class="model-print-notice">${shown(record.data.modelNotice)}</p>`;
+    reportHtml = summary
+      ? reportHtml.replace('<div class="summary-identification">', `${notice}<div class="summary-identification">`)
+      : reportHtml.replace('<div class="report-cover-title">', `<div class="report-cover-title">${notice}`);
+    reportHtml = reportHtml.replaceAll('<img src="./public/imagens_pub/assinatura-carimbo-nutricionista.jpg" alt="Assinatura e carimbo da nutricionista consultora" />', "");
+  }
+  report.innerHTML = reportHtml;
   document.body.classList.add("printing-ilpi");
   const baseTitle = `${record.data.reportNumber || "Relatório ILPI"} - ${record.data.institutionName || "OCTN"}`;
   document.title = summary ? `${baseTitle} - Resumo` : baseTitle;

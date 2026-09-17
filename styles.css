@@ -2213,6 +2213,8 @@ footer {
 .saved-report span, .saved-report small { color: #777f84; font-size: .75rem; }
 .saved-report .report-status-select { width: fit-content; min-height: 34px; padding: 5px 32px 5px 10px; border: 1px solid #cfe0d0; border-radius: 20px; background-color: #eef5ee; color: #347d3d; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 700; }
 .saved-report .report-status-select:focus-visible { outline: 3px solid rgba(69, 163, 76, .22); outline-offset: 2px; }
+.saved-report.model-report { border-color: #b8d8bb; background: #f8fbf8; }
+.report-model-badge { display: inline-flex; min-height: 34px; align-items: center; padding: 5px 12px; border: 1px solid #b8d8bb; border-radius: 20px; background: #eaf4eb; color: #347d3d; font-size: .78rem; font-weight: 800; }
 .report-actions { position: relative; display: flex; gap: 8px; align-items: center; }
 .report-actions button { min-height: 38px; padding: 0 13px; border: 1px solid #dce2e5; border-radius: 3px; background: #fff; color: #34383a; cursor: pointer; font-weight: 700; }
 .report-actions button:disabled { cursor: wait; opacity: .65; }
@@ -2385,6 +2387,7 @@ footer {
   body.printing-ilpi .report-summary-page { padding: 10mm 13mm 15mm; font-size: 7pt; line-height: 1.32; }
   .report-summary-page .report-header { margin-bottom: 3mm; padding-bottom: 2.5mm; }
   .report-summary-page .report-header img { width: 30mm; }
+  .report-summary-page .model-print-notice { margin: 0 0 2mm; padding: 1.5mm 2mm; font-size: 6pt; line-height: 1.25; }
   body.printing-ilpi .report-summary-page h2 { margin-bottom: 3mm; font-size: 13.5pt; }
   body.printing-ilpi .report-summary-page h2 span { margin-bottom: .8mm; font-size: 6.2pt; }
   .summary-identification { display: grid; grid-template-columns: 1.25fr .8fr 1fr; gap: 2mm; }
@@ -2530,6 +2533,7 @@ footer {
   .report-callout.green { border-color: #45a34c; }
   .report-callout strong { display: block; margin-bottom: 1mm; font-size: 7pt; letter-spacing: .08em; text-transform: uppercase; }
   .report-paragraph { margin: 0 0 4mm; text-align: justify; white-space: pre-wrap; }
+  .model-print-notice { margin: 4mm 0; padding: 3mm 4mm; border: .35mm solid #45a34c; background: #eef6ef; color: #2f5f34; font-size: 8pt; font-weight: 700; line-height: 1.4; }
   .report-note { margin: 3mm 0 0; padding: 3mm 4mm; border: .3mm solid #dce3e0; background: #f8faf9; color: #555e62; font-size: 7.3pt; break-inside: avoid; }
   .annex-report-grid { display: grid; gap: 5mm; }
   .annex-report-item { padding: 4mm; border: .3mm solid #dce3e0; border-top: 1mm solid #45a34c; break-inside: avoid; }
