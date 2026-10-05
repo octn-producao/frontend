@@ -444,42 +444,233 @@ async function authRequest(path, options = {}) {
   return payload;
 }
 
-// O Agendae continua sendo o responsável pela experiência e pelas permissões da agenda.
-// O site OCTN apenas abre a interface da loja em um modal restrito ao slug "octn".
+// O navegador conversa apenas com o backend OCTN. A chave do Agendae permanece no servidor.
 const agendaeModal = document.getElementById("agendae-modal");
 const agendaeModalOpen = document.getElementById("agendae-modal-open");
 const agendaeModalClose = document.getElementById("agendae-modal-close");
-const agendaeTabs = [...document.querySelectorAll("[data-agendae-tab]")];
-const agendaePanels = [...document.querySelectorAll("[data-agendae-panel]")];
+const agendaeLoading = document.getElementById("agendae-loading");
+const agendaeBookingForm = document.getElementById("agendae-booking-form");
+const agendaeService = document.getElementById("agendae-service");
+const agendaeProfessional = document.getElementById("agendae-professional");
+const agendaeDate = document.getElementById("agendae-date");
+const agendaeSlotGrid = document.getElementById("agendae-slot-grid");
+const agendaeSlotsEmpty = document.getElementById("agendae-slots-empty");
+const agendaeMessage = document.getElementById("agendae-message");
+const agendaeSubmit = document.getElementById("agendae-submit");
+const agendaeSuccess = document.getElementById("agendae-success");
 let agendaeModalReturnFocus = null;
+let agendaeCatalog = null;
+let agendaeAvailabilityController = null;
 
-function loadAgendaePanel(name) {
-  const frame = document.querySelector(`[data-agendae-panel="${name}"] iframe`);
-  if (frame && !frame.hasAttribute("src")) frame.src = frame.dataset.src;
+function saoPauloDate(date = new Date()) {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(date);
 }
 
-function selectAgendaeTab(name, focusTab = false) {
-  agendaeTabs.forEach((tab) => {
-    const selected = tab.dataset.agendaeTab === name;
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-    if (selected && focusTab) tab.focus();
-  });
-  agendaePanels.forEach((panel) => {
-    const selected = panel.dataset.agendaePanel === name;
-    panel.hidden = !selected;
-    panel.classList.toggle("active", selected);
-  });
-  loadAgendaePanel(name);
+function agendaeMaximumDate() {
+  const date = new Date(`${saoPauloDate()}T12:00:00Z`);
+  date.setUTCFullYear(date.getUTCFullYear() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
-function openAgendaeModal(tab = "client") {
+async function bookingRequest(path, options = {}) {
+  if (!API_BASE_URL) throw new Error("Serviço de agendamento não configurado.");
+  const response = await fetch(`${API_BASE_URL}/api/agenda${path}`, {
+    method: options.method || "GET",
+    cache: "no-store",
+    credentials: "include",
+    headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}) },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || "Não foi possível consultar a agenda neste momento.");
+    error.status = response.status;
+    error.code = payload.code || "agendae_error";
+    throw error;
+  }
+  return payload;
+}
+
+function setAgendaeMessage(message = "", success = false) {
+  agendaeMessage.textContent = message;
+  agendaeMessage.classList.toggle("success", success);
+}
+
+function addSelectOption(select, value, label) {
+  select.add(new Option(label, value));
+}
+
+function renderAgendaeCatalog(catalog) {
+  agendaeService.replaceChildren(new Option("Selecione um serviço", ""));
+  (catalog.services || []).forEach((service) => {
+    const price = Number(service.price);
+    const suffix = Number.isFinite(price) && price > 0 ? ` · ${currency.format(price)}` : "";
+    addSelectOption(agendaeService, service.id || service.name, `${service.name}${suffix}`);
+  });
+  agendaeProfessional.replaceChildren(new Option("Qualquer profissional", ""));
+  (catalog.professionals || []).forEach((professional) => {
+    addSelectOption(agendaeProfessional, professional.name, professional.role ? `${professional.name} · ${professional.role}` : professional.name);
+  });
+}
+
+async function loadAgendaeCatalog() {
+  if (agendaeCatalog) return;
+  agendaeLoading.hidden = false;
+  agendaeLoading.classList.remove("error");
+  agendaeLoading.textContent = "Carregando serviços e profissionais…";
+  agendaeBookingForm.hidden = true;
+  agendaeSuccess.hidden = true;
+  try {
+    agendaeCatalog = await bookingRequest("/catalog");
+    renderAgendaeCatalog(agendaeCatalog);
+    agendaeLoading.hidden = true;
+    agendaeBookingForm.hidden = false;
+  } catch (error) {
+    agendaeLoading.classList.add("error");
+    agendaeLoading.textContent = error.message;
+  }
+}
+
+function selectedAgendaeSlot() {
+  return agendaeBookingForm.querySelector('input[name="slot"]:checked');
+}
+
+function updateAgendaeSubmit() {
+  agendaeSubmit.disabled = !selectedAgendaeSlot() || !agendaeBookingForm.checkValidity();
+}
+
+function clearAgendaeSlots(message) {
+  agendaeSlotGrid.replaceChildren();
+  agendaeSlotsEmpty.textContent = message;
+  agendaeSlotsEmpty.hidden = false;
+  updateAgendaeSubmit();
+}
+
+function renderAgendaeSlots(slots) {
+  agendaeSlotGrid.replaceChildren();
+  if (!slots.length) {
+    clearAgendaeSlots("Não há horários disponíveis para essa seleção. Tente outra data ou profissional.");
+    return;
+  }
+  agendaeSlotsEmpty.hidden = true;
+  slots.forEach((slot, index) => {
+    const label = document.createElement("label");
+    label.className = "agendae-slot-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "slot";
+    input.value = String(index);
+    input.dataset.time = slot.time;
+    input.dataset.professional = slot.professional;
+    input.required = true;
+    const content = document.createElement("span");
+    const time = document.createElement("strong");
+    time.textContent = slot.time;
+    const professional = document.createElement("small");
+    professional.textContent = slot.professional;
+    content.append(time, professional);
+    label.append(input, content);
+    agendaeSlotGrid.append(label);
+  });
+  updateAgendaeSubmit();
+}
+
+async function updateAgendaeAvailability() {
+  const service = agendaeService.value;
+  const date = agendaeDate.value;
+  agendaeAvailabilityController?.abort();
+  setAgendaeMessage();
+  if (!service || !date) {
+    clearAgendaeSlots("Selecione o serviço e a data para consultar os horários.");
+    return;
+  }
+  const controller = new AbortController();
+  agendaeAvailabilityController = controller;
+  clearAgendaeSlots("Consultando horários disponíveis…");
+  const query = new URLSearchParams({ date, service });
+  if (agendaeProfessional.value) query.set("professional", agendaeProfessional.value);
+  try {
+    const availability = await bookingRequest(`/availability?${query}`, { signal: controller.signal });
+    if (agendaeAvailabilityController !== controller) return;
+    renderAgendaeSlots(availability.slots || []);
+  } catch (error) {
+    if (error.name === "AbortError") return;
+    clearAgendaeSlots("Não foi possível carregar os horários.");
+    setAgendaeMessage(error.message);
+  }
+}
+
+function resetAgendaeBooking() {
+  agendaeBookingForm.reset();
+  agendaeDate.min = saoPauloDate();
+  agendaeDate.max = agendaeMaximumDate();
+  clearAgendaeSlots("Selecione o serviço e a data para consultar os horários.");
+  setAgendaeMessage();
+  agendaeSuccess.hidden = true;
+  agendaeBookingForm.hidden = false;
+}
+
+function agendaeDetail(term, description) {
+  const wrapper = document.createElement("div");
+  const title = document.createElement("dt");
+  const value = document.createElement("dd");
+  title.textContent = term;
+  value.textContent = description || "—";
+  wrapper.append(title, value);
+  return wrapper;
+}
+
+function showAgendaeSuccess(booking) {
+  const date = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${booking.date}T12:00:00Z`));
+  document.getElementById("agendae-success-title").textContent = `${booking.service} reservado para ${date}.`;
+  const details = document.getElementById("agendae-success-details");
+  details.replaceChildren(
+    agendaeDetail("Horário", booking.time),
+    agendaeDetail("Profissional", booking.professional),
+    agendaeDetail("Atendimento", booking.locationType === "online" ? "On-line" : booking.serviceAddress || "Local informado pela OCTN"),
+    agendaeDetail("Status", "Confirmado")
+  );
+  document.getElementById("agendae-checkin-code").textContent = booking.checkInCode || "—";
+  agendaeBookingForm.hidden = true;
+  agendaeSuccess.hidden = false;
+  agendaeSuccess.focus?.();
+}
+
+async function submitAgendaeBooking(event) {
+  event.preventDefault();
+  const slot = selectedAgendaeSlot();
+  if (!slot || !agendaeBookingForm.reportValidity()) return;
+  const formData = new FormData(agendaeBookingForm);
+  const body = {
+    date: formData.get("date"),
+    time: slot.dataset.time,
+    professional: slot.dataset.professional,
+    service: formData.get("service"),
+    client: String(formData.get("client") || "").trim(),
+    phone: String(formData.get("phone") || "").trim(),
+  };
+  agendaeSubmit.disabled = true;
+  agendaeSubmit.textContent = "Confirmando…";
+  setAgendaeMessage();
+  try {
+    showAgendaeSuccess(await bookingRequest("/appointments", { method: "POST", body }));
+  } catch (error) {
+    setAgendaeMessage(error.message);
+    if (error.status === 409) await updateAgendaeAvailability();
+  } finally {
+    agendaeSubmit.textContent = "Confirmar agendamento";
+    updateAgendaeSubmit();
+  }
+}
+
+function openAgendaeModal() {
   if (!agendaeModal) return;
   agendaeModalReturnFocus = document.activeElement;
   agendaeModal.hidden = false;
   document.body.classList.add("agendae-modal-open");
-  selectAgendaeTab(tab);
   requestAnimationFrame(() => agendaeModalClose?.focus());
+  void loadAgendaeCatalog();
 }
 
 function closeAgendaeModal() {
@@ -490,25 +681,24 @@ function closeAgendaeModal() {
 }
 
 if (agendaeModal && agendaeModalOpen) {
-  agendaeModalOpen.addEventListener("click", () => openAgendaeModal("client"));
+  agendaeDate.min = saoPauloDate();
+  agendaeDate.max = agendaeMaximumDate();
+  agendaeModalOpen.addEventListener("click", openAgendaeModal);
   agendaeModalClose?.addEventListener("click", closeAgendaeModal);
   agendaeModal.addEventListener("click", (event) => {
     if (event.target === agendaeModal) closeAgendaeModal();
   });
-  agendaeTabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => selectAgendaeTab(tab.dataset.agendaeTab));
-    tab.addEventListener("keydown", (event) => {
-      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
-      event.preventDefault();
-      const offset = event.key === "ArrowRight" ? 1 : -1;
-      const next = agendaeTabs[(index + offset + agendaeTabs.length) % agendaeTabs.length];
-      selectAgendaeTab(next.dataset.agendaeTab, true);
-    });
-  });
+  agendaeService.addEventListener("change", updateAgendaeAvailability);
+  agendaeProfessional.addEventListener("change", updateAgendaeAvailability);
+  agendaeDate.addEventListener("change", updateAgendaeAvailability);
+  agendaeBookingForm.addEventListener("input", updateAgendaeSubmit);
+  agendaeBookingForm.addEventListener("change", updateAgendaeSubmit);
+  agendaeBookingForm.addEventListener("submit", submitAgendaeBooking);
+  document.getElementById("agendae-new-booking").addEventListener("click", resetAgendaeBooking);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !agendaeModal.hidden) closeAgendaeModal();
   });
-  if (initialView === "agendamento") openAgendaeModal("client");
+  if (initialView === "agendamento") openAgendaeModal();
 }
 
 function applyAuthSession(payload) {

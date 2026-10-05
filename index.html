@@ -24,8 +24,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=19" />
-    <script src="./script.js?v=21" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=20" />
+    <script src="./script.js?v=22" defer></script>
   </head>
   <body>
     <button class="skip-link" type="button" data-scroll-target="conteudo">Pular para o conteúdo</button>
@@ -43,10 +43,13 @@
             <button type="button" data-view-link="home" class="active">Home</button>
             <button type="button" data-view-link="consultoria">Consultoria</button>
             <button type="button" data-view-link="capacitacao">Capacitação</button>
-            <button type="button" id="agendae-modal-open" aria-haspopup="dialog" aria-controls="agendae-modal">Agendamento</button>
           </nav>
 
           <div class="header-actions">
+            <button class="header-booking-button" type="button" id="agendae-modal-open" aria-haspopup="dialog" aria-controls="agendae-modal">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" /></svg>
+              <span>Agendamento</span>
+            </button>
             <button
               class="header-icon-button menu-toggle"
               id="internal-menu-button"
@@ -876,40 +879,71 @@
       <section class="agendae-modal" role="dialog" aria-modal="true" aria-labelledby="agendae-modal-title">
         <header class="agendae-modal-header">
           <div class="agendae-modal-brand">
-            <img src="https://evotechubdev.github.io/agendae/public/imagens/logo_agendae.png" alt="Agendae" />
+            <img src="./public/imagens_pub/OCTN.png" alt="OCTN" />
             <div>
-              <span>Agenda integrada</span>
-              <strong id="agendae-modal-title">Agendamento OCTN</strong>
+              <span>Agenda integrada ao Agendae</span>
+              <strong id="agendae-modal-title">Agende seu atendimento</strong>
             </div>
           </div>
           <button class="agendae-modal-close" id="agendae-modal-close" type="button" aria-label="Fechar agendamento">&times;</button>
         </header>
 
-        <nav class="agendae-modal-tabs" role="tablist" aria-label="Áreas do agendamento">
-          <button id="agendae-client-tab" type="button" role="tab" aria-selected="true" aria-controls="agendae-client-panel" data-agendae-tab="client">Agendamento de clientes</button>
-          <button id="agendae-admin-tab" type="button" role="tab" aria-selected="false" aria-controls="agendae-admin-panel" data-agendae-tab="admin" tabindex="-1">Login administrativo</button>
-        </nav>
-
         <div class="agendae-modal-content">
-          <section id="agendae-client-panel" class="agendae-frame-panel active" role="tabpanel" aria-labelledby="agendae-client-tab" data-agendae-panel="client">
-            <iframe
-              id="agendae-client-frame"
-              title="Agendamento de clientes da OCTN"
-              data-src="https://evotechubdev.github.io/agendae/?route=octn&amp;public=1&amp;embed=octn"
-              allow="camera; clipboard-read; clipboard-write; fullscreen"
-              allowfullscreen
-              referrerpolicy="strict-origin-when-cross-origin"
-            ></iframe>
-          </section>
-          <section id="agendae-admin-panel" class="agendae-frame-panel" role="tabpanel" aria-labelledby="agendae-admin-tab" data-agendae-panel="admin" hidden>
-            <iframe
-              id="agendae-admin-frame"
-              title="Administração do agendamento da OCTN"
-              data-src="https://evotechubdev.github.io/agendae/?route=login&amp;establishment=octn&amp;embed=octn"
-              allow="camera; clipboard-read; clipboard-write; fullscreen"
-              allowfullscreen
-              referrerpolicy="strict-origin-when-cross-origin"
-            ></iframe>
+          <div class="agendae-loading" id="agendae-loading" role="status">Carregando serviços e profissionais…</div>
+
+          <form class="agendae-booking-form" id="agendae-booking-form" hidden>
+            <div class="agendae-form-intro">
+              <span>Reserva on-line</span>
+              <h2>Escolha o melhor horário para você</h2>
+              <p>Os horários são consultados em tempo real na agenda da OCTN.</p>
+            </div>
+
+            <div class="agendae-fields">
+              <label>
+                <span>Serviço</span>
+                <select id="agendae-service" name="service" required><option value="">Selecione um serviço</option></select>
+              </label>
+              <label>
+                <span>Profissional</span>
+                <select id="agendae-professional" name="professionalFilter"><option value="">Qualquer profissional</option></select>
+              </label>
+              <label>
+                <span>Data</span>
+                <input id="agendae-date" name="date" type="date" required />
+              </label>
+            </div>
+
+            <fieldset class="agendae-slots" id="agendae-slots">
+              <legend>Horários disponíveis</legend>
+              <p class="agendae-slots-empty" id="agendae-slots-empty">Selecione o serviço e a data para consultar os horários.</p>
+              <div class="agendae-slot-grid" id="agendae-slot-grid"></div>
+            </fieldset>
+
+            <div class="agendae-fields agendae-client-fields">
+              <label>
+                <span>Seu nome</span>
+                <input name="client" autocomplete="name" minlength="2" maxlength="80" required />
+              </label>
+              <label>
+                <span>Telefone com DDD</span>
+                <input name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="22" placeholder="(71) 99999-9999" required />
+              </label>
+            </div>
+
+            <div class="agendae-form-actions">
+              <p class="agendae-message" id="agendae-message" role="status" aria-live="polite"></p>
+              <button class="button button-primary" id="agendae-submit" type="submit" disabled>Confirmar agendamento</button>
+            </div>
+          </form>
+
+          <section class="agendae-success" id="agendae-success" aria-live="polite" hidden>
+            <span class="agendae-success-icon" aria-hidden="true">✓</span>
+            <span>Agendamento confirmado</span>
+            <h2 id="agendae-success-title">Seu horário está reservado.</h2>
+            <dl id="agendae-success-details"></dl>
+            <div class="agendae-checkin-code"><span>Código de presença</span><strong id="agendae-checkin-code"></strong></div>
+            <p>Guarde esse código para consultar e confirmar sua presença no Agendae.</p>
+            <button class="button button-secondary" id="agendae-new-booking" type="button">Fazer outro agendamento</button>
           </section>
         </div>
       </section>
