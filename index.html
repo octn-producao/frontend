@@ -24,8 +24,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=17" />
-    <script src="./script.js?v=19" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=19" />
+    <script src="./script.js?v=21" defer></script>
   </head>
   <body>
     <button class="skip-link" type="button" data-scroll-target="conteudo">Pular para o conteúdo</button>
@@ -43,6 +43,7 @@
             <button type="button" data-view-link="home" class="active">Home</button>
             <button type="button" data-view-link="consultoria">Consultoria</button>
             <button type="button" data-view-link="capacitacao">Capacitação</button>
+            <button type="button" id="agendae-modal-open" aria-haspopup="dialog" aria-controls="agendae-modal">Agendamento</button>
           </nav>
 
           <div class="header-actions">
@@ -870,6 +871,49 @@
         <article class="ilpi-report" id="ilpi-report" aria-label="Relatório para impressão"></article>
       </div>
     </main>
+
+    <div class="agendae-modal-backdrop" id="agendae-modal" hidden>
+      <section class="agendae-modal" role="dialog" aria-modal="true" aria-labelledby="agendae-modal-title">
+        <header class="agendae-modal-header">
+          <div class="agendae-modal-brand">
+            <img src="https://evotechubdev.github.io/agendae/public/imagens/logo_agendae.png" alt="Agendae" />
+            <div>
+              <span>Agenda integrada</span>
+              <strong id="agendae-modal-title">Agendamento OCTN</strong>
+            </div>
+          </div>
+          <button class="agendae-modal-close" id="agendae-modal-close" type="button" aria-label="Fechar agendamento">&times;</button>
+        </header>
+
+        <nav class="agendae-modal-tabs" role="tablist" aria-label="Áreas do agendamento">
+          <button id="agendae-client-tab" type="button" role="tab" aria-selected="true" aria-controls="agendae-client-panel" data-agendae-tab="client">Agendamento de clientes</button>
+          <button id="agendae-admin-tab" type="button" role="tab" aria-selected="false" aria-controls="agendae-admin-panel" data-agendae-tab="admin" tabindex="-1">Login administrativo</button>
+        </nav>
+
+        <div class="agendae-modal-content">
+          <section id="agendae-client-panel" class="agendae-frame-panel active" role="tabpanel" aria-labelledby="agendae-client-tab" data-agendae-panel="client">
+            <iframe
+              id="agendae-client-frame"
+              title="Agendamento de clientes da OCTN"
+              data-src="https://evotechubdev.github.io/agendae/?route=octn&amp;public=1&amp;embed=octn"
+              allow="camera; clipboard-read; clipboard-write; fullscreen"
+              allowfullscreen
+              referrerpolicy="strict-origin-when-cross-origin"
+            ></iframe>
+          </section>
+          <section id="agendae-admin-panel" class="agendae-frame-panel" role="tabpanel" aria-labelledby="agendae-admin-tab" data-agendae-panel="admin" hidden>
+            <iframe
+              id="agendae-admin-frame"
+              title="Administração do agendamento da OCTN"
+              data-src="https://evotechubdev.github.io/agendae/?route=login&amp;establishment=octn&amp;embed=octn"
+              allow="camera; clipboard-read; clipboard-write; fullscreen"
+              allowfullscreen
+              referrerpolicy="strict-origin-when-cross-origin"
+            ></iframe>
+          </section>
+        </div>
+      </section>
+    </div>
 
     <footer>
       <div class="container footer-inner">

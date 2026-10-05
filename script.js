@@ -444,6 +444,73 @@ async function authRequest(path, options = {}) {
   return payload;
 }
 
+// O Agendae continua sendo o responsável pela experiência e pelas permissões da agenda.
+// O site OCTN apenas abre a interface da loja em um modal restrito ao slug "octn".
+const agendaeModal = document.getElementById("agendae-modal");
+const agendaeModalOpen = document.getElementById("agendae-modal-open");
+const agendaeModalClose = document.getElementById("agendae-modal-close");
+const agendaeTabs = [...document.querySelectorAll("[data-agendae-tab]")];
+const agendaePanels = [...document.querySelectorAll("[data-agendae-panel]")];
+let agendaeModalReturnFocus = null;
+
+function loadAgendaePanel(name) {
+  const frame = document.querySelector(`[data-agendae-panel="${name}"] iframe`);
+  if (frame && !frame.hasAttribute("src")) frame.src = frame.dataset.src;
+}
+
+function selectAgendaeTab(name, focusTab = false) {
+  agendaeTabs.forEach((tab) => {
+    const selected = tab.dataset.agendaeTab === name;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    if (selected && focusTab) tab.focus();
+  });
+  agendaePanels.forEach((panel) => {
+    const selected = panel.dataset.agendaePanel === name;
+    panel.hidden = !selected;
+    panel.classList.toggle("active", selected);
+  });
+  loadAgendaePanel(name);
+}
+
+function openAgendaeModal(tab = "client") {
+  if (!agendaeModal) return;
+  agendaeModalReturnFocus = document.activeElement;
+  agendaeModal.hidden = false;
+  document.body.classList.add("agendae-modal-open");
+  selectAgendaeTab(tab);
+  requestAnimationFrame(() => agendaeModalClose?.focus());
+}
+
+function closeAgendaeModal() {
+  if (!agendaeModal || agendaeModal.hidden) return;
+  agendaeModal.hidden = true;
+  document.body.classList.remove("agendae-modal-open");
+  agendaeModalReturnFocus?.focus?.();
+}
+
+if (agendaeModal && agendaeModalOpen) {
+  agendaeModalOpen.addEventListener("click", () => openAgendaeModal("client"));
+  agendaeModalClose?.addEventListener("click", closeAgendaeModal);
+  agendaeModal.addEventListener("click", (event) => {
+    if (event.target === agendaeModal) closeAgendaeModal();
+  });
+  agendaeTabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => selectAgendaeTab(tab.dataset.agendaeTab));
+    tab.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      const offset = event.key === "ArrowRight" ? 1 : -1;
+      const next = agendaeTabs[(index + offset + agendaeTabs.length) % agendaeTabs.length];
+      selectAgendaeTab(next.dataset.agendaeTab, true);
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !agendaeModal.hidden) closeAgendaeModal();
+  });
+  if (initialView === "agendamento") openAgendaeModal("client");
+}
+
 function applyAuthSession(payload) {
   authState.authenticated = payload.authenticated === true;
   authState.username = payload.user?.username || "";
