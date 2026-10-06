@@ -22,7 +22,7 @@ Depois, acesse `http://localhost:8080`.
 - Agendamentos, disponibilidade, check-in, agenda, fila e configurações continuam sendo executados e armazenados exclusivamente pelo Agendae.
 - O backend OCTN usa a variável secreta `API_AGENDAE_OCTN` para autenticar as chamadas servidor a servidor.
 - A chave `ag_live_...` nunca é enviada ao HTML ou ao JavaScript público.
-- O pacote e o manual reutilizável ficam no repositório do Agendae, em `frontend/integracoes/`.
+- O pacote e o manual reutilizável ficam em `integracoes/` no repositório `evotechubdev/agendae-frontend`.
 
 ## Área profissional
 
