@@ -32,6 +32,7 @@ jobs:
           mkdir _site
           cp index.html styles.css script.js _site/
           cp -R public _site/public
+          cp -R integracoes _site/integracoes
 
       - name: Enviar artefato
         uses: actions/upload-pages-artifact@v3
