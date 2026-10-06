@@ -926,7 +926,7 @@
               </label>
               <label>
                 <span>Telefone com DDD</span>
-                <input name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="22" placeholder="(71) 99999-9999" required />
+                <input name="phone" type="tel" autocomplete="tel" inputmode="tel" minlength="10" maxlength="22" pattern="\+?[0-9 ()-]{10,22}" placeholder="(71) 99999-9999" required />
               </label>
             </div>
 
@@ -936,7 +936,7 @@
             </div>
           </form>
 
-          <section class="agendae-success" id="agendae-success" aria-live="polite" hidden>
+          <section class="agendae-success" id="agendae-success" aria-live="polite" tabindex="-1" hidden>
             <span class="agendae-success-icon" aria-hidden="true">✓</span>
             <span>Agendamento confirmado</span>
             <h2 id="agendae-success-title">Seu horário está reservado.</h2>

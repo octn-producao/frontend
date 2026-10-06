@@ -15,11 +15,11 @@ Depois, acesse `http://localhost:8080`.
 
 ## Agendamento Agendae
 
-- O botão **Agendamento** do header abre o Agendae em um modal, sem retirar o visitante do site OCTN.
-- A aba **Agendamento de clientes** abre somente a página pública do estabelecimento `octn`.
-- A aba **Login administrativo** abre somente o acesso da equipe da OCTN; a administração global do Agendae não faz parte da integração.
-- Agendamentos, consultas, check-in, agenda, fila e configurações continuam sendo executados e armazenados exclusivamente pelo Agendae.
-- O backend OCTN mantém `/api/agenda/*` para integrações servidor a servidor e usa a variável secreta `agendae-api-octn`.
+- O botão **Agendamento** do header abre um formulário nativo no site OCTN.
+- Serviços, profissionais e horários são carregados em tempo real pelas rotas `/api/agenda/*` do backend OCTN.
+- A confirmação cria a reserva no Agendae e apresenta ao cliente o código de presença retornado pela API.
+- Agendamentos, disponibilidade, check-in, agenda, fila e configurações continuam sendo executados e armazenados exclusivamente pelo Agendae.
+- O backend OCTN usa a variável secreta `agendae-api-octn` para autenticar as chamadas servidor a servidor.
 - A chave `ag_live_...` nunca é enviada ao HTML ou ao JavaScript público.
 
 ## Área profissional
