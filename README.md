@@ -15,12 +15,14 @@ Depois, acesse `http://localhost:8080`.
 
 ## Agendamento Agendae
 
-- O botão **Agendamento** do header abre um formulário nativo no site OCTN.
+- O botão **Agendamento** chama o widget autônomo `integracoes/agendae-booking-widget.js`.
+- A interface, a identidade visual e os estilos do modal ficam isolados do OCTN por Shadow DOM.
 - Serviços, profissionais e horários são carregados em tempo real pelas rotas `/api/agenda/*` do backend OCTN.
 - A confirmação cria a reserva no Agendae e apresenta ao cliente o código de presença retornado pela API.
 - Agendamentos, disponibilidade, check-in, agenda, fila e configurações continuam sendo executados e armazenados exclusivamente pelo Agendae.
-- O backend OCTN usa a variável secreta `agendae-api-octn` para autenticar as chamadas servidor a servidor.
+- O backend OCTN usa a variável secreta `API_AGENDAE_OCTN` para autenticar as chamadas servidor a servidor.
 - A chave `ag_live_...` nunca é enviada ao HTML ou ao JavaScript público.
+- O pacote e o manual reutilizável ficam no repositório do Agendae, em `frontend/integracoes/`.
 
 ## Área profissional
 
